@@ -105,11 +105,17 @@ Current cafés right now: **Le Marais Bakery** (build 13, universe 139), **Equat
 Mason** (build 11, universe 137). Backtest twins (built only from reviews before a real price
 change): builds 1, 8, 9, 10.
 
-### The live 3D viewer (embed it)
+### The live 3D viewer: host it in Mana
 
-`https://justsahil-s.github.io/CalHacks-13.0-Project/?cafe=<build id>` — e.g. `?cafe=13` for Le
-Marais. It's an isometric model of the real neighborhood with customers walking to the café and
-its competitor; it updates live.
+`fork-viewer.html` (attached, ~740 KB) is the complete Fork viewer as **one self-contained HTML
+file**: all JavaScript and CSS inlined, no build step. It connects directly to the Fork database
+over a WebSocket (`wss://maincloud.spacetimedb.com`) and loads two Google Fonts. Host it as a
+Mana app/page exactly as-is. It's an isometric model of the real neighborhood with customers
+walking to the café and its competitor, live.
+
+- Open a specific café with `?cafe=<build id>`, e.g. `?cafe=13` for Le Marais.
+- If Mana can't host a file this size, embed the same viewer from GitHub Pages instead:
+  `https://justsahil-s.github.io/CalHacks-13.0-Project/?cafe=<build id>`.
 
 ## App spec: "Fork"
 
