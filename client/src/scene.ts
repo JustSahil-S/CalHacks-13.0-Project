@@ -116,6 +116,8 @@ export class IsoScene {
 
     this.bindControls();
     window.addEventListener('resize', () => this.resize());
+    // The host can change size without the window doing so (panels, React layouts mounting at 0x0).
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => this.resize()).observe(this.host);
     this.resize();
     let last = performance.now();
     const loop = (now: number) => {
@@ -142,6 +144,7 @@ export class IsoScene {
 
   private resize() {
     const w = this.host.clientWidth, h = this.host.clientHeight;
+    if (!w || !h) return; // not laid out yet; the observer calls again once it is
     this.renderer.setSize(w, h);
     const aspect = w / h;
     this.camera.left = (-this.viewSize * aspect) / 2;

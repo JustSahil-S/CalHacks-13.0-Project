@@ -18591,7 +18591,7 @@ var tv = class {
 			color: 2038808,
 			transparent: !0,
 			opacity: .85
-		})), this.selectedRing.visible = !1, this.scene.add(this.selectedRing), this.bindControls(), window.addEventListener("resize", () => this.resize()), this.resize();
+		})), this.selectedRing.visible = !1, this.scene.add(this.selectedRing), this.bindControls(), window.addEventListener("resize", () => this.resize()), typeof ResizeObserver < "u" && new ResizeObserver(() => this.resize()).observe(this.host), this.resize();
 		let r = performance.now(), i = (e) => {
 			let t = Math.min(.1, (e - r) / 1e3);
 			r = e, this.azimuth += (this.azimuthGoal - this.azimuth) * Math.min(1, t * 8), Math.abs(this.viewSizeGoal - this.viewSize) > .5 && (this.viewSize += (this.viewSizeGoal - this.viewSize) * Math.min(1, t * 5), this.resize()), this.placeCamera(), this.onFrame(t), this.renderer.render(this.scene, this.camera), this.updatePins(), requestAnimationFrame(i);
@@ -18603,6 +18603,7 @@ var tv = class {
 	}
 	resize() {
 		let e = this.host.clientWidth, t = this.host.clientHeight;
+		if (!e || !t) return;
 		this.renderer.setSize(e, t);
 		let n = e / t;
 		this.camera.left = -this.viewSize * n / 2, this.camera.right = this.viewSize * n / 2, this.camera.top = this.viewSize / 2, this.camera.bottom = -this.viewSize / 2, this.camera.updateProjectionMatrix();
