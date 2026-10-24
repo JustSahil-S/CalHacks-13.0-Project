@@ -7,12 +7,15 @@ import { type Infer as __Infer } from "spacetimedb";
 
 // Import all procedure arg schemas
 import * as AdvanceTimeProcedure from "../advance_time_procedure";
+import * as FetchMenusProcedure from "../fetch_menus_procedure";
 import * as GenerateAllAgentsProcedure from "../generate_all_agents_procedure";
 import * as GeneratePersonasProcedure from "../generate_personas_procedure";
 import * as PopulateStoreProcedure from "../populate_store_procedure";
 
 export type AdvanceTimeArgs = __Infer<typeof AdvanceTimeProcedure.params>;
 export type AdvanceTimeResult = __Infer<typeof AdvanceTimeProcedure.returnType>;
+export type FetchMenusArgs = __Infer<typeof FetchMenusProcedure.params>;
+export type FetchMenusResult = __Infer<typeof FetchMenusProcedure.returnType>;
 export type GenerateAllAgentsArgs = __Infer<typeof GenerateAllAgentsProcedure.params>;
 export type GenerateAllAgentsResult = __Infer<typeof GenerateAllAgentsProcedure.returnType>;
 export type GeneratePersonasArgs = __Infer<typeof GeneratePersonasProcedure.params>;

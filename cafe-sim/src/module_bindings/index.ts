@@ -45,6 +45,7 @@ import UpsertReviewReducer from "./upsert_review_reducer";
 
 // Import all procedure arg schemas
 import * as AdvanceTimeProcedure from "./advance_time_procedure";
+import * as FetchMenusProcedure from "./fetch_menus_procedure";
 import * as GenerateAllAgentsProcedure from "./generate_all_agents_procedure";
 import * as GeneratePersonasProcedure from "./generate_personas_procedure";
 import * as PopulateStoreProcedure from "./populate_store_procedure";
@@ -55,6 +56,8 @@ import AgentStateRow from "./agent_state_table";
 import BusinessRow from "./business_table";
 import CompetitorRow from "./competitor_table";
 import CustomerAgentRow from "./customer_agent_table";
+import MenuItemRow from "./menu_item_table";
+import MenuSourceRow from "./menu_source_table";
 import MessageRow from "./message_table";
 import PopulateJobRow from "./populate_job_table";
 import ReviewRow from "./review_table";
@@ -138,6 +141,31 @@ const tablesSchema = __schema({
       { name: 'customer_agent_agent_id_key', constraint: 'unique', columns: ['agentId'] },
     ],
   }, CustomerAgentRow),
+  menuItem: __table({
+    name: 'menu_item',
+    indexes: [
+      { accessor: 'item_id', name: 'menu_item_item_id_idx_btree', algorithm: 'btree', columns: [
+        'itemId',
+      ] },
+      { accessor: 'place_id', name: 'menu_item_place_id_idx_btree', algorithm: 'btree', columns: [
+        'placeId',
+      ] },
+    ],
+    constraints: [
+      { name: 'menu_item_item_id_key', constraint: 'unique', columns: ['itemId'] },
+    ],
+  }, MenuItemRow),
+  menuSource: __table({
+    name: 'menu_source',
+    indexes: [
+      { accessor: 'place_id', name: 'menu_source_place_id_idx_btree', algorithm: 'btree', columns: [
+        'placeId',
+      ] },
+    ],
+    constraints: [
+      { name: 'menu_source_place_id_key', constraint: 'unique', columns: ['placeId'] },
+    ],
+  }, MenuSourceRow),
   message: __table({
     name: 'message',
     indexes: [
@@ -209,6 +237,7 @@ const reducersSchema = __reducers(
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */
 const proceduresSchema = __procedures(
   __procedureSchema("advance_time", AdvanceTimeProcedure.params, AdvanceTimeProcedure.returnType),
+  __procedureSchema("fetch_menus", FetchMenusProcedure.params, FetchMenusProcedure.returnType),
   __procedureSchema("generate_all_agents", GenerateAllAgentsProcedure.params, GenerateAllAgentsProcedure.returnType),
   __procedureSchema("generate_personas", GeneratePersonasProcedure.params, GeneratePersonasProcedure.returnType),
   __procedureSchema("populate_store", PopulateStoreProcedure.params, PopulateStoreProcedure.returnType),
@@ -222,6 +251,10 @@ type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "ta
     readonly "agent_state": Omit<typeof tablesSchema.schemaType.tables["agentState"], "accessorName"> & { readonly accessorName: "agent_state" };
     /** @deprecated Use `customerAgent` instead. This alias will be removed in the next major version. */
     readonly "customer_agent": Omit<typeof tablesSchema.schemaType.tables["customerAgent"], "accessorName"> & { readonly accessorName: "customer_agent" };
+    /** @deprecated Use `menuItem` instead. This alias will be removed in the next major version. */
+    readonly "menu_item": Omit<typeof tablesSchema.schemaType.tables["menuItem"], "accessorName"> & { readonly accessorName: "menu_item" };
+    /** @deprecated Use `menuSource` instead. This alias will be removed in the next major version. */
+    readonly "menu_source": Omit<typeof tablesSchema.schemaType.tables["menuSource"], "accessorName"> & { readonly accessorName: "menu_source" };
     /** @deprecated Use `populateJob` instead. This alias will be removed in the next major version. */
     readonly "populate_job": Omit<typeof tablesSchema.schemaType.tables["populateJob"], "accessorName"> & { readonly accessorName: "populate_job" };
   };
@@ -245,6 +278,8 @@ const tableAccessorAliases = {
   "agent_event": "agentEvent",
   "agent_state": "agentState",
   "customer_agent": "customerAgent",
+  "menu_item": "menuItem",
+  "menu_source": "menuSource",
   "populate_job": "populateJob",
 } as const;
 
@@ -272,6 +307,10 @@ export type DbView = __DbViewBase & {
   readonly "agent_state": __DbViewBase["agentState"];
   /** @deprecated Use `customerAgent` instead. This alias will be removed in the next major version. */
   readonly "customer_agent": __DbViewBase["customerAgent"];
+  /** @deprecated Use `menuItem` instead. This alias will be removed in the next major version. */
+  readonly "menu_item": __DbViewBase["menuItem"];
+  /** @deprecated Use `menuSource` instead. This alias will be removed in the next major version. */
+  readonly "menu_source": __DbViewBase["menuSource"];
   /** @deprecated Use `populateJob` instead. This alias will be removed in the next major version. */
   readonly "populate_job": __DbViewBase["populateJob"];
 };
@@ -284,6 +323,10 @@ export type Tables = __TablesBase & {
   readonly "agent_state": __TablesBase["agentState"];
   /** @deprecated Use `customerAgent` instead. This alias will be removed in the next major version. */
   readonly "customer_agent": __TablesBase["customerAgent"];
+  /** @deprecated Use `menuItem` instead. This alias will be removed in the next major version. */
+  readonly "menu_item": __TablesBase["menuItem"];
+  /** @deprecated Use `menuSource` instead. This alias will be removed in the next major version. */
+  readonly "menu_source": __TablesBase["menuSource"];
   /** @deprecated Use `populateJob` instead. This alias will be removed in the next major version. */
   readonly "populate_job": __TablesBase["populateJob"];
 };

@@ -98,6 +98,36 @@ export const CustomerAgent = __t.object("CustomerAgent", {
 });
 export type CustomerAgent = __Infer<typeof CustomerAgent>;
 
+export const MenuItem = __t.object("MenuItem", {
+  itemId: __t.u32(),
+  placeId: __t.string(),
+  name: __t.string(),
+  category: __t.string(),
+  section: __t.string(),
+  description: __t.string(),
+  uberPriceCents: __t.option(__t.u32()),
+  websitePriceCents: __t.option(__t.u32()),
+  predictedPriceCents: __t.u32(),
+  priceSource: __t.string(),
+  confidence: __t.f64(),
+  overridePriceCents: __t.option(__t.u32()),
+});
+export type MenuItem = __Infer<typeof MenuItem>;
+
+export const MenuSource = __t.object("MenuSource", {
+  placeId: __t.string(),
+  uberUrl: __t.string(),
+  uberItems: __t.u32(),
+  websiteUrl: __t.string(),
+  websiteStatus: __t.string(),
+  websiteItems: __t.u32(),
+  uberMarkup: __t.f64(),
+  markupBasis: __t.string(),
+  priceIndex: __t.f64(),
+  updatedAt: __t.timestamp(),
+});
+export type MenuSource = __Infer<typeof MenuSource>;
+
 export const Message = __t.object("Message", {
   sender: __t.identity(),
   sent: __t.timestamp(),

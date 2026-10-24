@@ -167,6 +167,51 @@ const populate_job = table(
   }
 );
 
+// One menu item per store, merged from Uber Eats and the store's own website
+const menu_item = table(
+  { name: 'menu_item', public: true },
+  {
+    item_id: t.u32().primaryKey().autoInc(),
+    place_id: t.string().index(),
+    name: t.string(),
+    // Normalized category used to compare stores, e.g. latte, drip_coffee, pastry
+    category: t.string(),
+    section: t.string(),
+    description: t.string(),
+    uber_price_cents: t.option(t.u32()),
+    website_price_cents: t.option(t.u32()),
+    // Best estimate of the in-store price
+    predicted_price_cents: t.u32(),
+    // website | uber_adjusted | area_estimate
+    price_source: t.string(),
+    // 0-1, how much the predicted price can be trusted
+    confidence: t.f64(),
+    // Set when the owner enters the real price; takes precedence over predicted_price_cents
+    override_price_cents: t.option(t.u32()),
+  }
+);
+
+// Where each store's menu came from and how its prices were predicted
+const menu_source = table(
+  { name: 'menu_source', public: true },
+  {
+    place_id: t.string().primaryKey(),
+    uber_url: t.string(),
+    uber_items: t.u32(),
+    website_url: t.string(),
+    // ok | no_website | no_prices | failed
+    website_status: t.string(),
+    website_items: t.u32(),
+    // Uber Eats price divided by in-store price, used to convert Uber-only prices
+    uber_markup: t.f64(),
+    // store (measured on this store's items) | area (median of other stores) | default
+    markup_basis: t.string(),
+    // Median of this store's category prices relative to the area median (1 = typical)
+    price_index: t.f64(),
+    updated_at: t.timestamp(),
+  }
+);
+
 const spacetimedb = schema(
   {
     user,
@@ -179,6 +224,8 @@ const spacetimedb = schema(
     agent_event,
     simulation,
     populate_job,
+    menu_item,
+    menu_source,
   },
   { env: { ANTHROPIC_API_KEY: t.string(), APIFY_API_TOKEN: t.string() } }
 );
@@ -387,6 +434,8 @@ function setJob(ctx: ProcedureCtx<Db>, fields: Partial<Omit<NonNullable<ReturnTy
 }
 
 function clearStoreData(tx: Tx) {
+  tx.db.menu_item.clear();
+  tx.db.menu_source.clear();
   tx.db.agent_event.clear();
   tx.db.agent_state.clear();
   tx.db.customer_agent.clear();
@@ -652,7 +701,8 @@ function callClaudeForJson(
   ctx: ProcedureCtx<Db>,
   model: string,
   system: string,
-  prompt: string,
+  // A plain prompt, or content blocks (text, image and document) for multimodal input
+  content: string | object[],
   maxTokens: number,
   schema: object
 ): any {
@@ -667,10 +717,10 @@ function callClaudeForJson(
       model,
       max_tokens: maxTokens,
       system,
-      messages: [{ role: 'user', content: prompt }],
+      messages: [{ role: 'user', content }],
       output_config: { format: { type: 'json_schema', schema } },
-      // Without this the model can spend the whole token budget thinking before writing the JSON
-      thinking: { type: 'between_tools' },
+      // Sonnet can otherwise spend the whole token budget thinking before writing the JSON; Haiku rejects this option
+      ...(model === PERSONA_MODEL ? { thinking: { type: 'between_tools' } } : {}),
     }),
     timeout: CLAUDE_FETCH_TIMEOUT,
   });
@@ -1158,6 +1208,710 @@ export const reset_simulation = spacetimedb.reducer(
     }
   }
 );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MENUS AND PRICE PREDICTION
+// ─────────────────────────────────────────────────────────────────────────────
+const UBER_EATS_ACTOR = 'borderline~uber-eats-scraper-ppr';
+const MENU_MODEL = VOICE_MODEL;
+// An Uber Eats store this close to the Google Maps location (and with a similar name) is the same store
+const UBER_MATCH_METERS = 150;
+const UBER_SAME_PLACE_METERS = 40;
+const APIFY_CONCURRENT_RUNS = 5;
+const UBER_MAX_POLLS = 30;
+// Typical delivery-app markup, used only when no store has prices from both sources to measure it
+const DEFAULT_UBER_MARKUP = 1.2;
+const MIN_UBER_MARKUP = 1;
+const MAX_UBER_MARKUP = 1.6;
+const MIN_PAIRS_FOR_STORE_MARKUP = 3;
+const MAX_ITEM_PRICE_CENTS = 10_000;
+const WEBSITE_FETCH_TIMEOUT = { __time_duration_micros__: 20n * 1_000_000n } as any;
+const MAX_MENU_PAGES = 4;
+const MAX_MENU_PDFS = 2;
+const MAX_MENU_IMAGES = 3;
+const MAX_MENU_TEXT_CHARS = 24_000;
+const MAX_MENU_FILE_BYTES = 3_500_000;
+const BROWSER_HEADERS = {
+  'user-agent':
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36',
+  accept: 'text/html,application/xhtml+xml,*/*',
+};
+// Online-ordering hosts show in-store prices, so menu links to them are followed even though they are off-site
+const ORDERING_HOSTS = /toasttab\.com|square\.site|squareup\.com|clover\.com|chownow\.com|order\.online|olo\.com|bentobox|popmenu|spoton|menufy|order\.store/i;
+// Delivery apps carry the markup we are trying to avoid, and social sites have no menu text
+const SKIPPED_HOSTS = /ubereats|doordash|grubhub|postmates|seamless|instagram|facebook|twitter|x\.com|tiktok|yelp|google\.|apple\.com|linkedin/i;
+
+// Checked in order, so more specific drinks come first
+const MENU_CATEGORIES: [string, RegExp][] = [
+  ['matcha_latte', /matcha/],
+  ['chai_latte', /\bchai\b/],
+  ['boba_milk_tea', /\bboba\b|bubble tea|milk tea|tapioca/],
+  ['mocha', /\bmocha\b/],
+  ['cold_brew', /cold brew/],
+  ['cappuccino', /cappuccino/],
+  ['flat_white', /flat white|cortado|gibraltar/],
+  ['latte', /\blatte\b/],
+  ['americano', /americano/],
+  ['espresso', /espresso|macchiato/],
+  ['drip_coffee', /drip|brewed coffee|house coffee|coffee of the day|pour.?over|^(hot |iced )?coffee$/],
+  ['tea', /\btea\b|chamomile|earl grey|london fog/],
+  ['smoothie', /smoothie|acai/],
+  ['juice', /juice|lemonade/],
+  ['soda', /root beer|ginger beer|ginger ale|\bsoda\b|\bcola\b|coke|sprite|sparkling water|kombucha/],
+  ['alcohol', /\bbeer\b|\bwine\b|cocktail|margarita|martini|mimosa|bloody mary|spritz|\bipa\b|whiske?y|vodka|tequila|\bgin\b/],
+  ['breakfast_sandwich', /breakfast sandwich|\beggs?\b.*(croissant|bagel|sandwich|muffin|biscuit|roll)|(croissant|bagel|biscuit) .*\beggs?\b/],
+  ['croissant', /croissant/],
+  ['bagel', /bagel/],
+  ['breakfast', /pancake|waffle|french toast/],
+  ['pastry', /muffin|scone|danish|cookie|brownie|pastry|cinnamon roll|donut|doughnut|\bcake\b|cheesecake|cupcake|banana bread|loaf|\btart\b/],
+  ['breakfast', /burrito|omelet|pancake|waffle|french toast|\beggs?\b|benedict|granola|oatmeal|yogurt|toast\b/],
+  ['sandwich', /sandwich|panini|\bwrap\b|\bmelt\b|\bclub\b|\bblt\b|burger/],
+  ['salad', /salad|\bbowl\b/],
+];
+// Categories shown as estimates for stores with no menu found anywhere
+const ESTIMATED_CATEGORIES: Record<string, string> = {
+  latte: 'Latte',
+  cappuccino: 'Cappuccino',
+  americano: 'Americano',
+  drip_coffee: 'Drip coffee',
+  cold_brew: 'Cold brew',
+  tea: 'Tea',
+  croissant: 'Croissant',
+  pastry: 'Pastry',
+  breakfast: 'Breakfast item',
+  breakfast_sandwich: 'Breakfast sandwich',
+  sandwich: 'Sandwich',
+};
+
+type RawMenuItem = { name: string; section: string; description: string; price_cents: number; category: string };
+type StoreMenu = {
+  store: Business;
+  uber: RawMenuItem[];
+  uber_url: string;
+  web: RawMenuItem[];
+  website_url: string;
+  website_status: string;
+};
+type MenuItemRow = Omit<NonNullable<ReturnType<Tx['db']['menu_item']['item_id']['find']>>, 'item_id'>;
+type MenuSourceRow = Omit<NonNullable<ReturnType<Tx['db']['menu_source']['place_id']['find']>>, 'updated_at'>;
+
+function foldText(text: string) {
+  return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
+function categorizeMenuItem(name: string, section: string) {
+  const item = foldText(name).replace(/\(.*?\)/g, '').trim();
+  for (const [category, pattern] of MENU_CATEGORIES) if (pattern.test(item)) return category;
+  const heading = foldText(section);
+  if (/coffee|espresso/.test(heading)) return 'specialty_coffee';
+  if (/\btea\b/.test(heading)) return 'tea';
+  if (/pastr|bak/.test(heading)) return 'pastry';
+  if (/drink|beverage/.test(heading)) return 'other_drink';
+  return 'other';
+}
+
+function nameTokens(name: string) {
+  return new Set(
+    foldText(name)
+      .replace(/\(.*?\)/g, ' ')
+      .replace(/\b\d+(\.\d+)?\s?(fl\.? ?oz|oz|ml|l)\b/g, ' ')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .split(' ')
+      .filter(word => word.length > 1 && !['the', 'and', 'with', 'of', 'st', 'cafe'].includes(word))
+  );
+}
+
+function nameSimilarity(a: string, b: string) {
+  const left = nameTokens(a);
+  const right = nameTokens(b);
+  if (left.size === 0 || right.size === 0) return 0;
+  let shared = 0;
+  for (const token of left) if (right.has(token)) shared++;
+  return shared / (left.size + right.size - shared);
+}
+
+function median(values: number[]) {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+function roundToNickel(cents: number) {
+  return Math.max(5, Math.round(cents / 5) * 5);
+}
+
+// ── Uber Eats ────────────────────────────────────────────────────────────────
+
+function startUberEatsSearch(ctx: ProcedureCtx<Db>, store: Business) {
+  return startApifyRun(ctx, UBER_EATS_ACTOR, {
+    query: store.name,
+    latitude: store.latitude,
+    longitude: store.longitude,
+    maxRows: 3,
+    diningMode: 'PICKUP',
+  });
+}
+
+function matchUberEatsStore(store: Business, results: ApifyPlace[]) {
+  let best: { result: ApifyPlace; score: number } | null = null;
+  for (const result of results) {
+    const lat = Number(result.location?.latitude);
+    const lng = Number(result.location?.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    const distance = distanceMeters(store.latitude, store.longitude, lat, lng);
+    const similarity = nameSimilarity(store.name, result.title ?? '');
+    const sameStore = distance <= UBER_SAME_PLACE_METERS || (distance <= UBER_MATCH_METERS && similarity >= 0.3);
+    if (sameStore && (!best || similarity > best.score)) best = { result, score: similarity };
+  }
+  return best?.result ?? null;
+}
+
+function uberEatsItems(result: ApifyPlace): RawMenuItem[] {
+  const sections: ApifyPlace[] = Array.isArray(result.menu) ? result.menu : [];
+  // Featured sections repeat items from the real sections, so read those last
+  const isFeatured = (s: ApifyPlace) => /featured|picked for you|popular|most liked/i.test(s.catalogName ?? '');
+  const ordered = [...sections.filter(s => !isFeatured(s)), ...sections.filter(isFeatured)];
+  const seen = new Set<string>();
+  const items: RawMenuItem[] = [];
+  for (const section of ordered) {
+    for (const item of section.catalogItems ?? []) {
+      const price = Math.round(Number(item.price));
+      const key = item.uuid ?? item.title;
+      if (!item.title || seen.has(key) || !(price > 0 && price <= MAX_ITEM_PRICE_CENTS)) continue;
+      seen.add(key);
+      const sectionName = section.catalogName ?? '';
+      items.push({
+        name: item.title,
+        section: sectionName,
+        description: item.itemDescription ?? '',
+        price_cents: price,
+        category: categorizeMenuItem(item.title, sectionName),
+      });
+    }
+  }
+  return items;
+}
+
+// The Apify free plan allows only a few concurrent runs, so searches are started as earlier ones finish
+function uberEatsQueue(ctx: ProcedureCtx<Db>, menus: StoreMenu[]) {
+  const waiting = menus.map((_, i) => i);
+  const active = new Map<number, ApifyRun>();
+  const describe = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+  const collect = (i: number, run: ApifyRun) => {
+    const store = menus[i].store;
+    if (run.status !== 'SUCCEEDED') {
+      console.warn(`Uber Eats search for ${store.name} ended with status ${run.status}`);
+      return;
+    }
+    try {
+      const match = matchUberEatsStore(store, apifyRequest(ctx, `datasets/${run.defaultDatasetId}/items?clean=true&format=json`));
+      if (match) {
+        menus[i].uber = uberEatsItems(match);
+        menus[i].uber_url = match.url ?? '';
+      }
+    } catch (error) {
+      console.warn(`Uber Eats results for ${store.name} could not be read: ${describe(error)}`);
+    }
+  };
+
+  const settle = (i: number, run: ApifyRun) => {
+    if (run.status === 'READY' || run.status === 'RUNNING') active.set(i, run);
+    else {
+      active.delete(i);
+      collect(i, run);
+    }
+  };
+
+  // Collects finished runs and starts waiting searches without blocking
+  const pump = () => {
+    for (const [i, run] of [...active]) {
+      try {
+        settle(i, apifyRequest(ctx, `actor-runs/${run.id}`).data);
+      } catch (error) {
+        console.warn(`Uber Eats run ${run.id} could not be checked: ${describe(error)}`);
+      }
+    }
+    while (active.size < APIFY_CONCURRENT_RUNS && waiting.length > 0) {
+      const i = waiting[0];
+      try {
+        active.set(i, startUberEatsSearch(ctx, menus[i].store));
+        waiting.shift();
+      } catch (error) {
+        if (/concurrent-runs-limit/.test(describe(error))) break;
+        waiting.shift();
+        console.warn(`Uber Eats search failed to start for ${menus[i].store.name}: ${describe(error)}`);
+      }
+    }
+  };
+
+  // Blocks until every search has finished, or gives up after the poll budget
+  const finish = (onProgress: (remaining: number) => void) => {
+    for (let polls = 0; active.size + waiting.length > 0; polls++) {
+      if (polls >= UBER_MAX_POLLS) {
+        console.warn(`Gave up on ${active.size + waiting.length} Uber Eats searches`);
+        return;
+      }
+      pump();
+      onProgress(active.size + waiting.length);
+      const [first] = active;
+      if (!first) continue;
+      try {
+        settle(first[0], apifyRequest(ctx, `actor-runs/${first[1].id}?waitForFinish=${APIFY_WAIT_SECS}`).data);
+      } catch (error) {
+        console.warn(`Uber Eats run ${first[1].id} could not be checked: ${describe(error)}`);
+      }
+    }
+  };
+
+  return { pump, finish };
+}
+
+// ── Store websites ───────────────────────────────────────────────────────────
+
+function hostOf(url: string) {
+  return (/^https?:\/\/([^/?#:]+)/i.exec(url)?.[1] ?? '').toLowerCase().replace(/^www\./, '');
+}
+
+// The module runtime has no URL class, so relative links are resolved by hand
+function resolveUrl(base: string, href: string) {
+  const link = href.trim().replace(/&amp;/g, '&');
+  if (!link || /^(mailto|tel|javascript|data|sms):/i.test(link)) return null;
+  if (/^https?:\/\//i.test(link)) return link.replace(/#.*$/, '');
+  const origin = /^(https?:\/\/[^/?#]+)/i.exec(base)?.[1];
+  if (!origin) return null;
+  if (link.startsWith('//')) return `${origin.split('//')[0]}${link}`.replace(/#.*$/, '');
+  if (link.startsWith('#')) return null;
+  if (link.startsWith('/')) return `${origin}${link}`.replace(/#.*$/, '');
+  const path = base.slice(origin.length).replace(/[?#].*$/, '');
+  const dir = path.includes('/') ? path.replace(/[^/]*$/, '') : '/';
+  return `${origin}${dir}${link}`.replace(/#.*$/, '');
+}
+
+function decodeEntities(text: string) {
+  return text
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;|&rsquo;|&lsquo;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCharCode(parseInt(code, 16)));
+}
+
+function htmlToText(html: string) {
+  return decodeEntities(
+    html
+      .replace(/<(script|style|noscript|svg|head)\b[\s\S]*?<\/\1>/gi, ' ')
+      .replace(/<br\s*\/?>|<\/(p|div|li|tr|h[1-6]|section|article)>/gi, '\n')
+      .replace(/<[^>]+>/g, ' ')
+  )
+    .replace(/[ \t\f\v]+/g, ' ')
+    .replace(/\s*\n\s*/g, '\n')
+    .trim();
+}
+
+function fetchPage(ctx: ProcedureCtx<Db>, url: string) {
+  try {
+    const response = ctx.http.fetch(url, { headers: BROWSER_HEADERS, timeout: WEBSITE_FETCH_TIMEOUT });
+    if (!response.ok) return null;
+    return { url: response.url || url, response, contentType: response.headers.get('content-type') ?? '' };
+  } catch {
+    return null;
+  }
+}
+
+const BASE64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+// The module runtime has no btoa or Buffer
+function toBase64(bytes: Uint8Array) {
+  const chunks: string[] = [];
+  for (let i = 0; i < bytes.length; i += 3) {
+    const n = (bytes[i] << 16) | ((bytes[i + 1] ?? 0) << 8) | (bytes[i + 2] ?? 0);
+    chunks.push(
+      BASE64_CHARS[(n >> 18) & 63] +
+        BASE64_CHARS[(n >> 12) & 63] +
+        (i + 1 < bytes.length ? BASE64_CHARS[(n >> 6) & 63] : '=') +
+        (i + 2 < bytes.length ? BASE64_CHARS[n & 63] : '=')
+    );
+  }
+  return chunks.join('');
+}
+
+// Claude can't always download menu files itself (many sit behind redirects), so they are sent inline
+function fetchMenuFile(ctx: ProcedureCtx<Db>, url: string) {
+  const file = fetchPage(ctx, url);
+  if (!file) return null;
+  const bytes = file.response.bytes();
+  if (bytes.length === 0 || bytes.length > MAX_MENU_FILE_BYTES) return null;
+  const type = file.contentType.split(';')[0].trim().toLowerCase();
+  const data = toBase64(bytes);
+  if (type === 'application/pdf' || (/\.pdf(\?|$)/i.test(url) && !type.startsWith('text/'))) {
+    return { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data } };
+  }
+  if (['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(type)) {
+    return { type: 'image', source: { type: 'base64', media_type: type, data } };
+  }
+  return null;
+}
+
+type MenuLink = { url: string; score: number; pdf: boolean };
+
+function menuLinks(html: string, pageUrl: string, siteHosts: Set<string>) {
+  const links: MenuLink[] = [];
+  for (const match of html.matchAll(/<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
+    const url = resolveUrl(pageUrl, match[1]);
+    if (!url) continue;
+    const host = hostOf(url);
+    const pdf = /\.pdf(\?|$)/i.test(url);
+    const ordering = ORDERING_HOSTS.test(host);
+    if (SKIPPED_HOSTS.test(host) || (!siteHosts.has(host) && !ordering && !pdf)) continue;
+    const label = foldText(`${url} ${htmlToText(match[2])}`);
+    let score = 0;
+    if (/menu/.test(label)) score += 3;
+    if (/order|food|drink|coffee|cafe|eat|breakfast|lunch|brunch|all.?day|bev/.test(label)) score += 1;
+    if (/wine|reserve|dessert|cocktail|happy.?hour|catering|event|press|career|job|gift/.test(label)) score -= 2;
+    if (ordering) score += 2;
+    if (score > 0 || (pdf && score === 0)) links.push({ url, score, pdf });
+  }
+  return links;
+}
+
+function menuImages(html: string, pageUrl: string) {
+  const images: string[] = [];
+  for (const match of html.matchAll(/<img\b[^>]*>/gi)) {
+    const tag = match[0];
+    const src = /\b(?:data-src|src)\s*=\s*["']([^"']+)["']/i.exec(tag)?.[1];
+    const alt = /\balt\s*=\s*["']([^"']*)["']/i.exec(tag)?.[1] ?? '';
+    if (!src || !/menu/i.test(`${src} ${alt}`)) continue;
+    const url = resolveUrl(pageUrl, src);
+    if (!url || !/\.(jpe?g|png|webp|gif)(\?|$)/i.test(url)) continue;
+    // Squarespace serves the original upload by default, which can be many megabytes
+    images.push(/squarespace-cdn\.com/.test(url) ? `${url.replace(/\?.*$/, '')}?format=1500w` : url);
+  }
+  return images;
+}
+
+function bestLinks(links: MenuLink[], count: number, skip: Set<string>) {
+  const best = new Map<string, number>();
+  for (const link of links) if (!skip.has(link.url)) best.set(link.url, Math.max(best.get(link.url) ?? -Infinity, link.score));
+  return [...best].sort((a, b) => b[1] - a[1]).slice(0, count).map(([url]) => url);
+}
+
+const WEBSITE_MENU_SYSTEM = `You extract menu items and their in-store prices from a cafe or restaurant's own website, including page text, menu photos and menu PDFs.
+Only include items whose price is shown. When several sizes are listed, use the smallest or regular size. Ignore add-on charges (like +$0.75 oat milk), gift cards, merchandise, retail bags of beans, catering trays and delivery fees.
+If the pages do not contain a priced menu, return an empty items list.`;
+
+const WEBSITE_MENU_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['items'],
+  properties: {
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name', 'section', 'price_dollars'],
+        properties: {
+          name: { type: 'string' },
+          section: { type: 'string', description: 'menu heading the item is listed under, or empty' },
+          price_dollars: { type: 'number' },
+        },
+      },
+    },
+  },
+};
+
+function scrapeWebsiteMenu(ctx: ProcedureCtx<Db>, store: Business): { items: RawMenuItem[]; status: string; url: string } {
+  const website = store.website.trim();
+  if (!/^https?:\/\//i.test(website) || SKIPPED_HOSTS.test(hostOf(website))) {
+    return { items: [], status: 'no_website', url: website };
+  }
+  const home = fetchPage(ctx, website);
+  if (!home) return { items: [], status: 'failed', url: website };
+
+  // Sites often redirect to a new domain, so links on either one count as on-site
+  const siteHosts = new Set([hostOf(website), hostOf(home.url)]);
+  const pages = [{ url: home.url, html: home.response.text() }];
+  const links = menuLinks(pages[0].html, home.url, siteHosts);
+  const visited = new Set([website, home.url]);
+  for (const url of bestLinks(links.filter(l => !l.pdf), MAX_MENU_PAGES - 1, visited)) {
+    visited.add(url);
+    const page = fetchPage(ctx, url);
+    if (!page || !/html|text/i.test(page.contentType)) continue;
+    const html = page.response.text();
+    pages.push({ url: page.url, html });
+    links.push(...menuLinks(html, page.url, siteHosts));
+  }
+
+  let text = '';
+  for (const page of pages) {
+    const pageText = htmlToText(page.html);
+    if (pageText) text += `\n\n=== ${page.url}\n${pageText}`;
+  }
+  text = text.slice(0, MAX_MENU_TEXT_CHARS);
+
+  const media: object[] = [];
+  for (const url of bestLinks(links.filter(l => l.pdf), MAX_MENU_PDFS, new Set())) {
+    const file = fetchMenuFile(ctx, url);
+    if (file) media.push(file);
+  }
+  const imageUrls = [...new Set(pages.flatMap(p => menuImages(p.html, p.url)))].slice(0, MAX_MENU_IMAGES);
+  for (const url of imageUrls) {
+    const file = fetchMenuFile(ctx, url);
+    if (file) media.push(file);
+  }
+
+  const hasPrices = /\$\s?\d|\d+\.\d{2}\b/.test(text);
+  if (!hasPrices && media.length === 0) return { items: [], status: 'no_prices', url: website };
+
+  const prompt = { type: 'text', text: `Store: ${store.name} (${store.category})\nWebsite pages:${text}` };
+  let extracted: any = null;
+  // One unreadable PDF or image makes Claude reject the whole request, so fall back to the page text alone
+  for (const content of media.length ? [[...media, prompt], [prompt]] : [[prompt]]) {
+    try {
+      extracted = callClaudeForJson(ctx, MENU_MODEL, WEBSITE_MENU_SYSTEM, content, 8000, WEBSITE_MENU_SCHEMA);
+      break;
+    } catch (error) {
+      console.warn(`Menu extraction failed for ${store.name}: ${error instanceof Error ? error.message : error}`);
+      extracted = null;
+    }
+  }
+  if (!extracted) return { items: [], status: 'failed', url: website };
+
+  const items: RawMenuItem[] = [];
+  for (const item of extracted.items ?? []) {
+    const price = Math.round(Number(item.price_dollars) * 100);
+    if (!item.name || !(price > 0 && price <= MAX_ITEM_PRICE_CENTS)) continue;
+    items.push({
+      name: String(item.name),
+      section: String(item.section ?? ''),
+      description: '',
+      price_cents: price,
+      category: categorizeMenuItem(String(item.name), String(item.section ?? '')),
+    });
+  }
+  return { items, status: items.length ? 'ok' : 'no_prices', url: website };
+}
+
+// ── Price prediction ─────────────────────────────────────────────────────────
+
+// Pairs website items with the same item on Uber Eats so the delivery-app markup can be measured
+function pairMenuItems(web: RawMenuItem[], uber: RawMenuItem[]) {
+  const used = new Set<number>();
+  const pairs: { web: RawMenuItem; uber: RawMenuItem }[] = [];
+  for (const webItem of web) {
+    let bestIndex = -1;
+    let bestScore = 0.6;
+    uber.forEach((uberItem, index) => {
+      if (used.has(index) || uberItem.category !== webItem.category) return;
+      const score = nameSimilarity(webItem.name, uberItem.name);
+      if (score >= bestScore) {
+        bestScore = score;
+        bestIndex = index;
+      }
+    });
+    if (bestIndex >= 0) {
+      used.add(bestIndex);
+      pairs.push({ web: webItem, uber: uber[bestIndex] });
+    }
+  }
+  return pairs;
+}
+
+function googlePriceLevel(price: string) {
+  const dollars = /^\s*(\$+)\s*$/.exec(price)?.[1].length;
+  if (dollars) return [0, 0.85, 1, 1.25, 1.5][Math.min(dollars, 4)];
+  const range = /(\d+)\D+(\d+)/.exec(price);
+  return range ? (Number(range[1]) + Number(range[2])) / 2 : null;
+}
+
+function predictMenus(menus: StoreMenu[]) {
+  // 1. Measure the Uber Eats markup per store, then for the area
+  const pairsByStore = new Map(menus.map(m => [m.store.place_id, pairMenuItems(m.web, m.uber)]));
+  const storeMarkups = new Map<string, number>();
+  for (const [placeId, pairs] of pairsByStore) {
+    const ratios = pairs.map(p => p.uber.price_cents / p.web.price_cents).filter(r => r >= 0.8 && r <= 2);
+    if (ratios.length >= MIN_PAIRS_FOR_STORE_MARKUP) {
+      storeMarkups.set(placeId, clamp(median(ratios), MIN_UBER_MARKUP, MAX_UBER_MARKUP, DEFAULT_UBER_MARKUP));
+    }
+  }
+  const measuredAreaMarkup = median([...storeMarkups.values()]);
+  const areaMarkup = measuredAreaMarkup ?? DEFAULT_UBER_MARKUP;
+
+  // 2. Merge both sources into predicted in-store prices
+  const items: MenuItemRow[] = [];
+  const sources: MenuSourceRow[] = [];
+  for (const menu of menus) {
+    const placeId = menu.store.place_id;
+    const pairs = pairsByStore.get(placeId)!;
+    const storeMarkup = storeMarkups.get(placeId);
+    const markup = storeMarkup ?? areaMarkup;
+    const markupBasis = storeMarkup ? 'store' : measuredAreaMarkup ? 'area' : 'default';
+    const uberConfidence = storeMarkup ? 0.8 : measuredAreaMarkup ? 0.65 : 0.5;
+    const pairedWeb = new Set(pairs.map(p => p.web));
+    const pairedUber = new Set(pairs.map(p => p.uber));
+    const row = (item: RawMenuItem, fields: Partial<MenuItemRow>): MenuItemRow => ({
+      place_id: placeId,
+      name: item.name,
+      category: item.category,
+      section: item.section,
+      description: item.description,
+      uber_price_cents: undefined,
+      website_price_cents: undefined,
+      predicted_price_cents: item.price_cents,
+      price_source: 'website',
+      confidence: 0.9,
+      override_price_cents: undefined,
+      ...fields,
+    });
+    for (const { web, uber } of pairs) {
+      items.push(row(web, { description: uber.description, uber_price_cents: uber.price_cents, website_price_cents: web.price_cents, confidence: 0.95 }));
+    }
+    for (const web of menu.web) if (!pairedWeb.has(web)) items.push(row(web, { website_price_cents: web.price_cents }));
+    for (const uber of menu.uber) {
+      if (pairedUber.has(uber)) continue;
+      items.push(row(uber, {
+        uber_price_cents: uber.price_cents,
+        predicted_price_cents: roundToNickel(uber.price_cents / markup),
+        price_source: 'uber_adjusted',
+        confidence: uberConfidence,
+      }));
+    }
+    sources.push({
+      place_id: placeId,
+      uber_url: menu.uber_url,
+      uber_items: menu.uber.length,
+      website_url: menu.website_url,
+      website_status: menu.website_status,
+      website_items: menu.web.length,
+      uber_markup: menu.uber.length ? markup : 0,
+      markup_basis: menu.uber.length ? markupBasis : 'none',
+      price_index: 1,
+    });
+  }
+
+  // 3. Typical price of each category in the area (median of each store's median, so big menus don't dominate)
+  const storeCategoryMedians = new Map<string, Map<string, number>>();
+  for (const menu of menus) {
+    const byCategory = new Map<string, number[]>();
+    for (const item of items) {
+      if (item.place_id !== menu.store.place_id) continue;
+      byCategory.set(item.category, [...(byCategory.get(item.category) ?? []), item.predicted_price_cents]);
+    }
+    storeCategoryMedians.set(menu.store.place_id, new Map([...byCategory].map(([c, prices]) => [c, median(prices)!])));
+  }
+  const areaCategoryMedians = new Map<string, number>();
+  const categoryStoreCounts = new Map<string, number>();
+  for (const category of new Set([...storeCategoryMedians.values()].flatMap(m => [...m.keys()]))) {
+    const values = [...storeCategoryMedians.values()].map(m => m.get(category)).filter((v): v is number => v !== undefined);
+    areaCategoryMedians.set(category, median(values)!);
+    categoryStoreCounts.set(category, values.length);
+  }
+
+  // 4. Price index for stores with menus; estimated menus for stores without one
+  const priceLevels = menus.map(m => googlePriceLevel(m.store.price)).filter((v): v is number => v !== null && v > 2);
+  const areaPriceLevel = median(priceLevels);
+  for (const source of sources) {
+    const own = storeCategoryMedians.get(source.place_id)!;
+    const ratios = [...own]
+      .filter(([category]) => (categoryStoreCounts.get(category) ?? 0) >= 2 && !['other', 'alcohol'].includes(category))
+      .map(([category, price]) => price / areaCategoryMedians.get(category)!);
+    if (ratios.length > 0) {
+      // Geometric mean: with few shared categories a median is usually one store's own price, and a plain mean overweights outliers
+      source.price_index = Math.exp(ratios.reduce((sum, r) => sum + Math.log(r), 0) / ratios.length);
+      continue;
+    }
+    const store = menus.find(m => m.store.place_id === source.place_id)!.store;
+    const level = googlePriceLevel(store.price);
+    const factor = level === null ? 1 : level <= 2 ? level : areaPriceLevel ? clamp(level / areaPriceLevel, 0.7, 1.5, 1) : 1;
+    source.price_index = factor;
+    for (const [category, label] of Object.entries(ESTIMATED_CATEGORIES)) {
+      const areaPrice = areaCategoryMedians.get(category);
+      if (!areaPrice) continue;
+      items.push({
+        place_id: source.place_id,
+        name: `${label} (estimated)`,
+        category,
+        section: 'Estimated from nearby stores',
+        description: '',
+        uber_price_cents: undefined,
+        website_price_cents: undefined,
+        predicted_price_cents: roundToNickel(areaPrice * factor),
+        price_source: 'area_estimate',
+        confidence: 0.3,
+        override_price_cents: undefined,
+      });
+    }
+  }
+  return { items, sources, areaMarkup, measuredAreaMarkup };
+}
+
+// Collects menus for the selected store and every competitor and predicts in-store prices
+export const fetch_menus = spacetimedb.procedure({}, t.u32(), ctx => {
+  const { running, stores } = ctx.withTx(tx => {
+    const job = tx.db.populate_job.job_id.find(JOB_ID);
+    const storeId = job?.place_id ?? '';
+    const placeIds = [storeId, ...[...tx.db.competitor.place_id.filter(storeId)].map(c => c.competitor_place_id)];
+    return {
+      running:
+        job?.status === 'running' &&
+        tx.timestamp.microsSinceUnixEpoch - job.updated_at.microsSinceUnixEpoch < STALE_JOB_MICROS,
+      stores: placeIds.map(id => tx.db.business.place_id.find(id)).filter((b): b is Business => !!b),
+    };
+  });
+  if (running) throw new SenderError('Wait for the current run to finish');
+  if (stores.length === 0) throw new SenderError('Populate a store first');
+
+  setJob(ctx, { status: 'running', message: `Searching Uber Eats for ${stores.length} stores...` });
+  try {
+    const menus: StoreMenu[] = stores.map(store => ({
+      store,
+      uber: [],
+      uber_url: '',
+      web: [],
+      website_url: store.website,
+      website_status: 'no_website',
+    }));
+    const uber = uberEatsQueue(ctx, menus);
+
+    for (const [i, menu] of menus.entries()) {
+      uber.pump();
+      setJob(ctx, { message: `Reading ${menu.store.name}'s website for prices (${i + 1} of ${menus.length})...` });
+      const web = scrapeWebsiteMenu(ctx, menu.store);
+      Object.assign(menu, { web: web.items, website_url: web.url, website_status: web.status });
+    }
+    uber.finish(remaining => setJob(ctx, { message: `Collecting Uber Eats menus (${remaining} left)...` }));
+
+    const { items, sources, areaMarkup, measuredAreaMarkup } = predictMenus(menus);
+    ctx.withTx(tx => {
+      for (const source of sources) {
+        tx.db.menu_item.place_id.delete(source.place_id);
+        const row = { ...source, updated_at: tx.timestamp };
+        if (tx.db.menu_source.place_id.find(source.place_id)) tx.db.menu_source.place_id.update(row);
+        else tx.db.menu_source.insert(row);
+      }
+      for (const item of items) tx.db.menu_item.insert({ item_id: 0, ...item });
+    });
+
+    const withWebsite = sources.filter(s => s.website_items > 0).length;
+    const withUber = sources.filter(s => s.uber_items > 0).length;
+    const markupNote = measuredAreaMarkup
+      ? `Uber Eats markup measured at ${Math.round((areaMarkup - 1) * 100)}%`
+      : `Uber Eats markup assumed ${Math.round((areaMarkup - 1) * 100)}%`;
+    setJob(ctx, {
+      status: 'done',
+      message: `Menus for ${stores.length} stores: ${withWebsite} from websites, ${withUber} from Uber Eats · ${items.length} items · ${markupNote}`,
+    });
+    return items.length;
+  } catch (error) {
+    setJob(ctx, { status: 'error', message: error instanceof Error ? error.message : String(error) });
+    throw error;
+  }
+});
 
 function validateName(name: string) {
   if (!name) throw new SenderError('Names must not be empty');

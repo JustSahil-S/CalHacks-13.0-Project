@@ -3,6 +3,7 @@ import './App.css';
 import { procedures, reducers, tables } from './module_bindings';
 import { useProcedure, useReducer, useSpacetimeDB, useTable } from 'spacetimedb/react';
 import StoreMap from './StoreMap';
+import MenuSection from './MenuSection';
 
 const MAX_RADIUS_KM = 2;
 const COMPETITOR_LIMIT = 50;
@@ -21,6 +22,7 @@ function App() {
   const populateStore = useProcedure(procedures.populateStore);
   const clearStoreData = useReducer(reducers.clearStoreData);
   const generateAllAgents = useProcedure(procedures.generateAllAgents);
+  const fetchMenus = useProcedure(procedures.fetchMenus);
 
   const [businesses, businessesReady] = useTable(tables.business);
   const [competitorLinks] = useTable(tables.competitor);
@@ -65,8 +67,13 @@ function App() {
     generateAllAgents({ totalAgents }).catch(error => setRequestError(errorMessage(error)));
   };
 
+  const onFetchMenus = () => {
+    setRequestError('');
+    fetchMenus().catch(error => setRequestError(errorMessage(error)));
+  };
+
   const onClear = () => {
-    if (!window.confirm('Delete all stores, competitors, reviews and agents?')) return;
+    if (!window.confirm('Delete all stores, competitors, reviews, agents and menus?')) return;
     setRequestError('');
     clearStoreData().catch(error => setRequestError(errorMessage(error)));
   };
@@ -216,6 +223,15 @@ function App() {
             </table>
           )}
         </section>
+      )}
+
+      {store && (
+        <MenuSection
+          stores={[store, ...competitors.map(({ business }) => business!)]}
+          ownPlaceId={store.placeId}
+          running={running}
+          onFetch={onFetchMenus}
+        />
       )}
 
       {store && (
