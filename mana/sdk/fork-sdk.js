@@ -18935,7 +18935,10 @@ function lv(e, t) {
 				profitWins: a?.profitWins ?? 0,
 				visitsChangePct: a && i ? (a.meanVisits / (i.meanVisits || 1) - 1) * 100 : 0,
 				starsChange: a && i ? a.meanStars - i.meanStars : 0,
-				priceMentionShare: a?.priceMentionShare ?? 0
+				priceMentionShare: a?.priceMentionShare ?? 0,
+				profitChangePerMonth: a && i ? Number(a.meanProfitCents - i.meanProfitCents) / 100 / n.days * 30 : 0,
+				revenueChangePerMonth: a && i ? Number(a.meanRevenueCents - i.meanRevenueCents) / 100 / n.days * 30 : 0,
+				baselineProfitPerMonth: i ? Number(i.meanProfitCents) / 100 / n.days * 30 : 0
 			};
 		},
 		dailyRevenue(t) {

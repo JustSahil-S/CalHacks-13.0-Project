@@ -6,7 +6,7 @@ export default defineConfig({
   build: {
     lib: { entry: 'src/sdk.ts', formats: ['es'], fileName: () => 'fork-sdk.js' },
     outDir: '../mana/sdk',
-    emptyOutDir: true,
+    emptyOutDir: false, // keep test.html next to the bundle
     minify: true,
   },
 });

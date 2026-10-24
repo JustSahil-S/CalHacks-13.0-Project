@@ -59,6 +59,11 @@ export interface ExperimentSummary {
   visitsChangePct: number;
   starsChange: number;
   priceMentionShare: number;
+  /** Mean change vs no change, in dollars per 30 days (positive = the price change earns more). */
+  profitChangePerMonth: number;
+  revenueChangePerMonth: number;
+  /** Mean profit per 30 days with no change, for scale. */
+  baselineProfitPerMonth: number;
 }
 
 export const pull = (r: { distanceM: number; rating: number; priceIndex: number }) =>
@@ -198,6 +203,9 @@ function makeFork(conn: DbConnection, identity: string): Fork {
         visitsChangePct: chg && ctl ? (chg.meanVisits / (ctl.meanVisits || 1) - 1) * 100 : 0,
         starsChange: chg && ctl ? chg.meanStars - ctl.meanStars : 0,
         priceMentionShare: chg?.priceMentionShare ?? 0,
+        profitChangePerMonth: chg && ctl ? (Number(chg.meanProfitCents - ctl.meanProfitCents) / 100 / e.days) * 30 : 0,
+        revenueChangePerMonth: chg && ctl ? (Number(chg.meanRevenueCents - ctl.meanRevenueCents) / 100 / e.days) * 30 : 0,
+        baselineProfitPerMonth: ctl ? (Number(ctl.meanProfitCents) / 100 / e.days) * 30 : 0,
       };
     },
     dailyRevenue(expId) {
