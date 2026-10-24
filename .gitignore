@@ -2,6 +2,7 @@
 .admin-key
 .env
 .stdb-identity.json
+client/dist/
 data/
 node_modules/
 server/dist/
