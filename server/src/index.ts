@@ -275,7 +275,8 @@ export const add_cafe = spacetimedb.reducer({ query: t.string() }, (ctx, { query
   if (builder) requireBuilder(ctx);
   else {
     const now = ctx.timestamp.microsSinceUnixEpoch;
-    const owners = [...ctx.db.buildOwner.iter()];
+    // Failed builds don't count: they stop at the cheap Google lookup.
+    const owners = [...ctx.db.buildOwner.iter()].filter(o => ctx.db.twinBuild.id.find(o.buildId)?.status !== 'failed');
     const since = (micros: bigint) => owners.filter(o => o.createdAt.microsSinceUnixEpoch > now - micros);
     const hour = since(3_600_000_000n);
     if (hour.filter(o => o.identity.isEqual(ctx.sender)).length >= PUBLIC_BUILDS_PER_PERSON_PER_HOUR)

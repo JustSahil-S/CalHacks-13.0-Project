@@ -141,6 +141,15 @@ export function advanceBuild(ctx: ProcCtx, buildId: bigint) {
       if (run.status !== 'SUCCEEDED') throw new Error(`Google Maps lookup ${run.status}`);
       const place: Place | undefined = datasetItems(ctx, token!, run.datasetId, PLACE_FIELDS, 1)[0];
       if (!place?.url) throw new Error('No Google Maps place found for that link or name');
+      // Stop before paying for a review scrape that can't make a twin.
+      if (b.cutoffDate !== SCAN) {
+        if (!place.categoryName && !place.reviewsCount)
+          throw new Error(
+            `That matched the address "${place.address ?? place.title}", not a business. Add the café's name (e.g. "Café name, street, city") or paste its Google Maps link.`
+          );
+        if ((place.reviewsCount ?? 0) < 20)
+          throw new Error(`${place.title} has only ${place.reviewsCount ?? 0} Google reviews; Fork needs at least 20 to build its customers.`);
+      }
 
       const cutoff = b.cutoffDate === SCAN ? '' : b.cutoffDate;
       const reviewsInput: Record<string, unknown> = {
