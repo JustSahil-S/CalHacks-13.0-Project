@@ -31,14 +31,34 @@ function kmToDegrees(lat: number, km: number) {
   };
 }
 
-function radiusPolygon(lat: number, lng: number, radiusKm: number): Feature<Polygon> {
+function circleRing(lat: number, lng: number, radiusKm: number) {
   const delta = kmToDegrees(lat, radiusKm);
   const ring: [number, number][] = [];
   for (let i = 0; i <= 64; i++) {
     const angle = (i / 64) * 2 * Math.PI;
     ring.push([lng + delta.lng * Math.cos(angle), lat + delta.lat * Math.sin(angle)]);
   }
-  return { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [ring] } };
+  return ring;
+}
+
+function radiusPolygon(lat: number, lng: number, radiusKm: number): Feature<Polygon> {
+  return { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [circleRing(lat, lng, radiusKm)] } };
+}
+
+// Everything except the circle, used to gray out the area outside the simulation
+function outsidePolygon(lat: number, lng: number, radiusKm: number): Feature<Polygon> {
+  const world: [number, number][] = [
+    [-180, -85],
+    [180, -85],
+    [180, 85],
+    [-180, 85],
+    [-180, -85],
+  ];
+  return {
+    type: 'Feature',
+    properties: {},
+    geometry: { type: 'Polygon', coordinates: [world, circleRing(lat, lng, radiusKm).reverse()] },
+  };
 }
 
 function windowBounds(lat: number, lng: number, radiusKm: number): [[number, number], [number, number]] {
@@ -70,6 +90,10 @@ export default function StoreMap({
   );
   const radiusArea = useMemo(
     () => radiusPolygon(store.latitude, store.longitude, radiusKm),
+    [store.latitude, store.longitude, radiusKm]
+  );
+  const outsideArea = useMemo(
+    () => outsidePolygon(store.latitude, store.longitude, radiusKm),
     [store.latitude, store.longitude, radiusKm]
   );
 
@@ -108,6 +132,8 @@ export default function StoreMap({
         ref={mapRef}
         initialViewState={{ bounds, ...camera }}
         mapStyle={BASEMAP_STYLE}
+        // Panning stops at the window around the circle, and zooming out stops once the window fills the view
+        maxBounds={[...bounds[0], ...bounds[1]]}
         maxPitch={70}
         onClick={() => setSelected(null)}
       >
@@ -126,6 +152,9 @@ export default function StoreMap({
             'fill-extrusion-opacity': 0.85,
           }}
         />
+        <Source id="outside-radius" type="geojson" data={outsideArea}>
+          <Layer id="outside-radius-fill" type="fill" paint={{ 'fill-color': '#6b7280', 'fill-opacity': 0.35 }} />
+        </Source>
         <Source id="radius" type="geojson" data={radiusArea}>
           <Layer id="radius-fill" type="fill" paint={{ 'fill-color': '#2563eb', 'fill-opacity': 0.06 }} />
           <Layer
