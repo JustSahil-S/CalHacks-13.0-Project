@@ -98,7 +98,8 @@ export function menuCandidates(results: { url: string; title?: string; descripti
   const own = hostOf(website).replace(/^www\./, '');
   const scored: { url: string; score: number; rank: number }[] = [];
   results.forEach((r, rank) => {
-    const url = r.url ?? '';
+    // Google tags result links with a tracking id; it isn't part of the page.
+    const url = (r.url ?? '').replace(/([?&])srsltid=[^&#]*&?/, '$1').replace(/[?&]$/, '');
     const ownSite = !!own && hostOf(url).endsWith(own);
     if (!ownSite && !matchesCafe(r, place)) return;
     const score = menuUrlScore(url, website);
@@ -211,6 +212,27 @@ const MENU_RULES = [
   'note: one short sentence on where the prices came from.',
 ].join('\n');
 
+// Reading a real menu page: keep the everyday core rather than whatever the page features first.
+const READ_RULES = [
+  'Return up to 30 items, in this priority: every everyday coffee and espresso drink they sell (drip/brewed',
+  'coffee, espresso, americano, latte, cappuccino, mocha, cold brew, iced versions), their teas and chai, then',
+  'the pastries and food people most commonly order. Seasonal or signature specials only if there is room.',
+  'Skip whole loaves, bulk or catering items, bags of beans, merchandise, add-ons and modifiers.',
+  'Use the price for a regular or medium size (one entry per item, no duplicate sizes).',
+  'category is one of: coffee, tea, other drink, pastry, food, retail.',
+  'note: one short sentence on where the prices came from.',
+].join('\n');
+const READ_MAX = 30;
+
+/** Page text for Claude: markdown without image and link addresses, which crowd out the menu. */
+function pageText(p: { markdown?: string; text?: string }): string {
+  return (p.markdown || p.text || '')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n');
+}
+
 function toItems(raw: { name: string; category: string; price: number }[], cap = 14): MenuItemIn[] {
   const used = new Set<string>();
   const items: MenuItemIn[] = [];
@@ -238,9 +260,9 @@ export function readMenuFromPages(
   place: Place
 ): { items: MenuItemIn[]; note: string; usedAssets: number; error: string } {
   const text = pages
-    .map(p => `# ${p.url}\n${(p.markdown || p.text || '').slice(0, 15000)}`)
+    .map(p => `# ${p.url}\n${pageText(p).slice(0, 60000)}`)
     .join('\n\n')
-    .slice(0, 40000);
+    .slice(0, 90000);
   const assets = menuAssets(pages);
   if (text.trim().length < 80 && !assets.length) return { items: [], note: '', usedAssets: 0, error: 'menu page had no readable content' };
   const content: any[] = [
@@ -250,7 +272,7 @@ export function readMenuFromPages(
         `Below is the online menu or ordering page of ${place.title} (${place.address ?? ''}).`,
         assets.length ? 'Menu images or PDFs from the page are attached too; read prices from them as well.' : '',
         'Extract the menu with prices. If no prices are visible anywhere, return an empty items list.',
-        MENU_RULES,
+        READ_RULES,
         '',
         text,
       ].join('\n'),
@@ -261,13 +283,13 @@ export function readMenuFromPages(
         : { type: 'document', source: { type: 'url', url: a.url } }
     ),
   ];
-  const res = callClaude(ctx, content, MENU_SCHEMA, 6000);
+  const res = callClaude(ctx, content, MENU_SCHEMA, 8000);
   if (!res.ok && assets.length) {
     // An attached image/PDF Claude couldn't fetch shouldn't sink the whole read: retry text-only.
-    const retry = callClaude(ctx, [content[0]], MENU_SCHEMA, 6000);
-    return { items: retry.ok ? toItems(retry.data.items) : [], note: retry.ok ? retry.data.note : '', usedAssets: 0, error: retry.error };
+    const retry = callClaude(ctx, [content[0]], MENU_SCHEMA, 8000);
+    return { items: retry.ok ? toItems(retry.data.items, READ_MAX) : [], note: retry.ok ? retry.data.note : '', usedAssets: 0, error: retry.error };
   }
-  return { items: res.ok ? toItems(res.data.items) : [], note: res.ok ? res.data.note : '', usedAssets: assets.length, error: res.error };
+  return { items: res.ok ? toItems(res.data.items, READ_MAX) : [], note: res.ok ? res.data.note : '', usedAssets: assets.length, error: res.error };
 }
 
 /** A review cut to ~300 characters, keeping every sentence that names a price. */

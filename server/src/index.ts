@@ -7,7 +7,7 @@ import { fetchAreaMap } from './areamap';
 import { syncCard } from './cards';
 import { realMenuItems } from './menu';
 import { callClaude } from './claude';
-import { advanceBuild, advanceRivalScan, fixedCosts, inspectMenuCrawl, inspectMenuSearch, queueProfileJobs, usableReviews, nominalRevenuePerDay, profileBatch, SCAN } from './pipeline';
+import { advanceBuild, advanceRivalScan, fixedCosts, inspectMenuCrawl, inspectMenuSearch, testMenuRead, queueProfileJobs, usableReviews, nominalRevenuePerDay, profileBatch, SCAN } from './pipeline';
 import { DEFAULT_RADIUS_M, MAX_RADIUS_M } from './rivals';
 import {
   applyPrices,
@@ -455,6 +455,12 @@ export const build_area_map = spacetimedb.procedure(
 export const inspect_menu_crawl = spacetimedb.procedure({ buildId: t.u64() }, t.string(), (ctx, { buildId }) =>
   ctx.withTx(tx => tx.db.admin.identity.find(ctx.sender) !== null)
     ? inspectMenuCrawl(ctx, buildId)
+    : JSON.stringify({ error: 'admin only' })
+);
+
+export const test_menu_read = spacetimedb.procedure({ buildId: t.u64() }, t.string(), (ctx, { buildId }) =>
+  ctx.withTx(tx => tx.db.admin.identity.find(ctx.sender) !== null)
+    ? testMenuRead(ctx, buildId)
     : JSON.stringify({ error: 'admin only' })
 );
 

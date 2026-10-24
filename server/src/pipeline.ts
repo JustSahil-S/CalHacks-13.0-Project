@@ -463,6 +463,24 @@ export function inspectMenuCrawl(ctx: ProcCtx, buildId: bigint): string {
   });
 }
 
+/** Admin: read a build's last menu crawl again with the current reader; returns items, writes nothing. */
+export function testMenuRead(ctx: ProcCtx, buildId: bigint): string {
+  const token = ctx.env.APIFY_TOKEN;
+  const b = ctx.withTx(tx => tx.db.twinBuild.id.find(buildId));
+  const ms = ctx.withTx(tx => tx.db.menuSource.buildId.find(buildId));
+  if (!token || !b?.placeJson || !ms?.runId) return JSON.stringify({ error: 'no token, place or crawl run for this build' });
+  const run = runStatus(ctx, token, ms.runId);
+  if (run.status !== 'SUCCEEDED') return JSON.stringify({ error: `crawl ${run.status}` });
+  const read = readMenuFromPages(ctx, datasetItems(ctx, token, run.datasetId, 'url,markdown,text,html', 5), JSON.parse(b.placeJson));
+  return JSON.stringify({
+    url: ms.url,
+    count: read.items.length,
+    note: read.note,
+    error: read.error,
+    items: read.items.map(i => `${i.category} | ${i.name} | $${(i.priceCents / 100).toFixed(2)}`),
+  });
+}
+
 /** Admin: the Google search a build's menu lookup ran, and how each result scored as a menu page. */
 export function inspectMenuSearch(ctx: ProcCtx, buildId: bigint): string {
   const token = ctx.env.APIFY_TOKEN;
@@ -558,7 +576,7 @@ function resolveMenu(
         const drinks = est.items.filter(i => isDrink(i.category) && !names.has(i.name.toLowerCase()) && !keys.has(i.key));
         if (drinks.length) {
           return {
-            items: [...drinks.slice(0, 8), ...read.items].slice(0, 16),
+            items: [...drinks.slice(0, 8), ...read.items].slice(0, 38),
             source: read.usedAssets ? 'menu photo' : 'website',
             detail: `${read.items.length} items read from ${url}; ${Math.min(8, drinks.length)} drinks estimated (the page we found had no drink prices). ${read.note}`.trim(),
           };
