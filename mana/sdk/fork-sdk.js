@@ -18633,7 +18633,7 @@ var tv = class {
 	pick(e) {
 		if (!this.pawns) return;
 		let t = this.renderer.domElement.getBoundingClientRect(), n = new q((e.clientX - t.left) / t.width * 2 - 1, -((e.clientY - t.top) / t.height) * 2 + 1), r = new wm();
-		r.setFromCamera(n, this.camera);
+		r.setFromCamera(n, this.camera), this.pawns.computeBoundingSphere();
 		let i = r.intersectObject(this.pawns)[0];
 		this.onPick(i?.instanceId ?? null);
 	}

@@ -213,6 +213,7 @@ export class IsoScene {
     const ndc = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
     const ray = new THREE.Raycaster();
     ray.setFromCamera(ndc, this.camera);
+    this.pawns.computeBoundingSphere(); // pawns move every frame; a stale sphere makes clicks miss
     const hit = ray.intersectObject(this.pawns)[0];
     this.onPick(hit?.instanceId ?? null);
   }
