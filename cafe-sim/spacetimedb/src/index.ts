@@ -461,9 +461,6 @@ function replaceCompetitors(
 // ─────────────────────────────────────────────────────────────────────────────
 const GOOGLE_PLACES_ACTOR = 'compass~crawler-google-places';
 const GOOGLE_REVIEWS_ACTOR = 'compass~Google-Maps-Reviews-Scraper';
-// Newest reviews fetched per place; the selected store gets more for richer customer personas
-const STORE_REVIEWS = 40;
-const COMPETITOR_REVIEWS = 15;
 const JOB_ID = 0;
 const MAX_RADIUS_KM = 2;
 const MAX_COMPETITORS = 50;
@@ -471,7 +468,7 @@ const MAX_COMPETITORS = 50;
 const CRAWL_RESULTS_PER_COMPETITOR = 3;
 const MIN_CRAWL_RESULTS = 20;
 // A run left 'running' longer than this is assumed to have crashed
-const STALE_JOB_MICROS = 10n * 60n * 1_000_000n;
+const STALE_JOB_MICROS = 20n * 60n * 1_000_000n;
 const COMPETITOR_SEARCH_TERMS = ['cafe'];
 // Only the primary category is checked, since many restaurants and stores list "Cafe" as a secondary one
 const DRINK_CATEGORY_PATTERN = /\b(caf[eé]s?|coffee|espresso|tea|boba|juice|smoothie|kombucha|drinks?)\b/i;
@@ -652,7 +649,6 @@ export const populate_store = spacetimedb.procedure(
         maxQuestions: 0,
       });
       let competitorRun = pin ? startCompetitorSearch(ctx, pin.lat, pin.lng, radius_km, max_competitors) : null;
-      const storeReviewsRun = startReviewsRun(ctx, { startUrls: [{ url }] }, STORE_REVIEWS);
 
       const [place] = waitForApifyRun(ctx, storeRun);
       if (!place?.placeId) throw new SenderError('Google Maps did not return a place for that link');
@@ -682,21 +678,9 @@ export const populate_store = spacetimedb.procedure(
       ctx.withTx(tx => replaceCompetitors(tx, store.place_id, radius_km * 1000, closest));
 
       setJob(ctx, {
-        message: `Found ${closest.length} competitors, fetching the newest reviews...`,
-        competitors_found: closest.length,
-      });
-      const competitorReviewsRun =
-        closest.length > 0
-          ? startReviewsRun(ctx, { placeIds: closest.map(c => c.place_id) }, COMPETITOR_REVIEWS)
-          : null;
-      const storeReviews = saveReviews(ctx, waitForApifyRun(ctx, storeReviewsRun));
-      const competitorReviews = competitorReviewsRun ? saveReviews(ctx, waitForApifyRun(ctx, competitorReviewsRun)) : 0;
-
-      setJob(ctx, {
         status: 'done',
-        message:
-          `Found ${closest.length} competitors within ${radius_km} km of ${store.name} · ` +
-          `${storeReviews} store reviews, ${competitorReviews} competitor reviews`,
+        message: `Found ${closest.length} competitors within ${radius_km} km of ${store.name}`,
+        competitors_found: closest.length,
       });
       return closest.length;
     } catch (error) {
@@ -794,6 +778,27 @@ function startReviewsRun(ctx: ProcedureCtx<Db>, target: { startUrls: { url: stri
     reviewsOrigin: 'google',
     language: 'en',
   });
+}
+
+const REVIEW_FETCH_CONCURRENCY = 5;
+
+function fetchReviewsForTargets(
+  ctx: ProcedureCtx<Db>,
+  targets: { place_id: string; maxReviews: number }[]
+) {
+  let saved = 0;
+  let batch: ApifyRun[] = [];
+  const flush = () => {
+    for (const run of batch) saved += saveReviews(ctx, waitForApifyRun(ctx, run));
+    batch = [];
+  };
+  for (const target of targets) {
+    if (target.maxReviews < 1) continue;
+    batch.push(startReviewsRun(ctx, { placeIds: [target.place_id] }, target.maxReviews));
+    if (batch.length >= REVIEW_FETCH_CONCURRENCY) flush();
+  }
+  flush();
+  return saved;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1042,6 +1047,46 @@ function allocateAgents(stores: { place_id: string; weight: number; max: number 
   return allocation;
 }
 
+// Splits a review-text budget across stores in proportion to their agent counts.
+// Google's public review total is the crowd size; this is only how many texts Claude reads.
+function allocateReviewBudget(
+  stores: { place_id: string; agents: number; reviews_count: number }[],
+  cap: number
+) {
+  const eligible = stores.filter(s => s.agents > 0 && s.reviews_count > 0);
+  const totalAgents = eligible.reduce((sum, s) => sum + s.agents, 0) || 1;
+  const room = (s: (typeof eligible)[number]) => Math.max(1, Math.min(s.reviews_count, cap));
+  const allocation = new Map<string, number>();
+  let used = 0;
+  for (const s of eligible) {
+    const n = Math.min(room(s), Math.max(1, Math.round((cap * s.agents) / totalAgents)));
+    allocation.set(s.place_id, n);
+    used += n;
+  }
+  const adjust = (dir: -1 | 1) => {
+    let best: (typeof eligible)[number] | undefined;
+    let bestScore = -Infinity;
+    for (const s of eligible) {
+      const current = allocation.get(s.place_id)!;
+      const next = current + dir;
+      if (next < 1 || next > room(s)) continue;
+      const target = (cap * s.agents) / totalAgents;
+      const score = dir === 1 ? target - current : current - target;
+      if (score > bestScore) {
+        bestScore = score;
+        best = s;
+      }
+    }
+    if (!best) return false;
+    allocation.set(best.place_id, allocation.get(best.place_id)! + dir);
+    used += dir;
+    return true;
+  };
+  while (used > cap && adjust(-1)) {}
+  while (used < cap && adjust(1)) {}
+  return allocation;
+}
+
 const BATCH_PERSONA_SYSTEM = `${PERSONA_SYSTEM.split('Respond with only')[0]}
 You will receive several businesses. Create exactly persona_count personas for each one, using only that business's reviews.`;
 
@@ -1089,8 +1134,9 @@ const PERSONA_BATCH_SCHEMA = {
   },
 };
 
-const MAX_TOTAL_AGENTS = 100;
-const MAX_AGENTS_PER_STORE = 15;
+const MAX_TOTAL_AGENTS = 200;
+const MAX_AGENTS_PER_STORE = 40;
+const REVIEW_PARSE_CAP = 300;
 // Stores are sent to Claude in batches of about this many personas per call
 const PERSONAS_PER_CLAUDE_CALL = 12;
 const TOKENS_PER_PERSONA = 700;
@@ -1105,48 +1151,95 @@ export const generate_all_agents = spacetimedb.procedure(
     if (total_agents < 1 || total_agents > MAX_TOTAL_AGENTS) {
       throw new SenderError(`Total agents must be between 1 and ${MAX_TOTAL_AGENTS}`);
     }
-    const { running, stores } = ctx.withTx(tx => {
+    const { running, storeId } = ctx.withTx(tx => {
       const job = tx.db.populate_job.job_id.find(JOB_ID);
-      const storeId = job?.place_id ?? '';
-      const placeIds = [storeId, ...[...tx.db.competitor.place_id.filter(storeId)].map(c => c.competitor_place_id)];
       return {
         running:
           job?.status === 'running' &&
           tx.timestamp.microsSinceUnixEpoch - job.updated_at.microsSinceUnixEpoch < STALE_JOB_MICROS,
-        stores: placeIds
-          .map(id => ({ place: tx.db.business.place_id.find(id), reviews: [...tx.db.review.place_id.filter(id)] }))
-          .filter((s): s is { place: Business; reviews: Review[] } => !!s.place && s.reviews.length > 0),
+        storeId: job?.place_id ?? '',
       };
     });
     if (running) throw new SenderError('Wait for the current run to finish');
-    if (stores.length === 0) throw new SenderError('Populate a store with reviews first');
 
-    const allocation = allocateAgents(
+    const loadStores = () =>
+      ctx.withTx(tx => {
+        const placeIds = [storeId, ...[...tx.db.competitor.place_id.filter(storeId)].map(c => c.competitor_place_id)];
+        return placeIds
+          .map(id => ({ place: tx.db.business.place_id.find(id), reviews: [...tx.db.review.place_id.filter(id)] }))
+          .filter((s): s is { place: Business; reviews: Review[] } => !!s.place && s.place.reviews_count > 0);
+      });
+
+    let stores = loadStores();
+    if (stores.length === 0) throw new SenderError('Populate a store first');
+
+    let allocation = allocateAgents(
       stores.map(s => ({
         place_id: s.place.place_id,
         weight: Math.max(1, s.place.reviews_count),
-        max: Math.min(MAX_AGENTS_PER_STORE, s.reviews.length),
+        max: Math.min(MAX_AGENTS_PER_STORE, s.place.reviews_count),
       })),
       total_agents
     );
 
-    const batches: (typeof stores)[] = [];
-    let batch: typeof stores = [];
-    let batchPersonas = 0;
-    for (const store of stores) {
-      const count = allocation.get(store.place.place_id) ?? 0;
-      if (batch.length > 0 && batchPersonas + count > PERSONAS_PER_CLAUDE_CALL) {
-        batches.push(batch);
-        batch = [];
-        batchPersonas = 0;
-      }
-      batch.push(store);
-      batchPersonas += count;
-    }
-    if (batch.length > 0) batches.push(batch);
+    const reviewBudget = allocateReviewBudget(
+      stores.map(s => ({
+        place_id: s.place.place_id,
+        agents: allocation.get(s.place.place_id) ?? 0,
+        reviews_count: s.place.reviews_count,
+      })),
+      REVIEW_PARSE_CAP
+    );
+    const toFetch = stores
+      .map(s => ({
+        place_id: s.place.place_id,
+        maxReviews: reviewBudget.get(s.place.place_id) ?? 0,
+        have: s.reviews.filter(r => r.text.trim()).length,
+      }))
+      .filter(s => s.maxReviews > s.have)
+      .map(s => ({ place_id: s.place_id, maxReviews: s.maxReviews }));
 
-    setJob(ctx, { status: 'running', message: `Creating agents for ${stores.length} stores...` });
+    setJob(ctx, {
+      status: 'running',
+      message:
+        toFetch.length > 0
+          ? `Fetching up to ${REVIEW_PARSE_CAP} reviews for ${stores.length} stores...`
+          : `Creating agents for ${stores.length} stores...`,
+    });
     try {
+      if (toFetch.length > 0) {
+        const fetched = fetchReviewsForTargets(ctx, toFetch);
+        stores = loadStores().filter(s => s.reviews.some(r => r.text.trim()));
+        if (stores.length === 0) throw new SenderError('Apify did not return any review text');
+        allocation = allocateAgents(
+          stores.map(s => ({
+            place_id: s.place.place_id,
+            weight: Math.max(1, s.place.reviews_count),
+            max: Math.min(MAX_AGENTS_PER_STORE, s.reviews.length),
+          })),
+          total_agents
+        );
+        setJob(ctx, { message: `Saved ${fetched} reviews, creating agents...` });
+      }
+
+      const batches: (typeof stores)[] = [];
+      let batch: typeof stores = [];
+      let batchPersonas = 0;
+      for (const store of stores) {
+        const count = allocation.get(store.place.place_id) ?? 0;
+        if (count === 0) continue;
+        if (batch.length > 0 && batchPersonas + count > PERSONAS_PER_CLAUDE_CALL) {
+          batches.push(batch);
+          batch = [];
+          batchPersonas = 0;
+        }
+        batch.push(store);
+        batchPersonas += count;
+      }
+      if (batch.length > 0) batches.push(batch);
+      if (batches.length === 0) throw new SenderError('Could not allocate any agents');
+
+      setJob(ctx, { message: `Creating agents for ${stores.length} stores...` });
       let created = 0;
       for (const [i, group] of batches.entries()) {
         setJob(ctx, {
@@ -2509,13 +2602,6 @@ const MAX_ITEMS_PER_VISIT = 4;
 const MARKET_TOKENS_PER_AGENT = 220;
 // Real customers per Google reviewer who decide where to go on a given day; turns each agent into a group of people
 const DAILY_CUSTOMERS_PER_REVIEWER = 0.4;
-// Ingredient cost as a share of an item's real price. Scenario price changes don't change what an item costs to make.
-const DRINK_COST_SHARE = 0.25;
-const FOOD_COST_SHARE = 0.32;
-const DRINK_CATEGORIES = new Set([
-  'matcha_latte', 'chai_latte', 'boba_milk_tea', 'mocha', 'cold_brew', 'cappuccino', 'flat_white', 'latte',
-  'americano', 'espresso', 'drip_coffee', 'specialty_coffee', 'tea', 'smoothie', 'juice', 'soda', 'alcohol', 'other_drink',
-]);
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const DAY_MILLIS = 86_400_000;
 
@@ -2535,10 +2621,6 @@ type Universe = {
   changes: string[];
 };
 type MarketDay = { day: number; date: string; weekday: string; agents: Agent[]; places: Business[]; universeIds: number[] };
-
-function costShare(category: string) {
-  return DRINK_CATEGORIES.has(category) ? DRINK_COST_SHARE : FOOD_COST_SHARE;
-}
 
 function formatCents(cents: number) {
   return `$${(cents / 100).toFixed(2)}`;
@@ -2560,7 +2642,7 @@ function simMenu(code: string, items: MenuItemRow[], edits: ScenarioEdit[]): Sim
       section: item.section,
       price_cents: changed?.price_cents ?? price,
       real_price_cents: changed ? price : null,
-      cost_cents: Math.round(price * costShare(item.category)),
+      cost_cents: 0,
     });
   });
   edits
@@ -2572,7 +2654,7 @@ function simMenu(code: string, items: MenuItemRow[], edits: ScenarioEdit[]): Sim
         section: edit.section,
         price_cents: edit.price_cents,
         real_price_cents: null,
-        cost_cents: Math.round(edit.price_cents * costShare(edit.category)),
+        cost_cents: 0,
       })
     );
   return menu;

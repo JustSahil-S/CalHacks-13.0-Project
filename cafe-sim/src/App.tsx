@@ -1,22 +1,29 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import './App.css';
-import { procedures, reducers, tables } from './module_bindings';
-import { useProcedure, useReducer, useSpacetimeDB, useTable } from 'spacetimedb/react';
-import StoreMap from './StoreMap';
-import MenuSection from './MenuSection';
-import MenuPanel from './MenuPanel';
-import Timeline from './Timeline';
+import { useEffect, useState, type FormEvent } from "react";
+import "./App.css";
+import { procedures, reducers, tables } from "./module_bindings";
+import {
+  useProcedure,
+  useReducer,
+  useSpacetimeDB,
+  useTable,
+} from "spacetimedb/react";
+import StoreMap from "./StoreMap";
+import MenuSection from "./MenuSection";
+import MenuPanel from "./MenuPanel";
+import Timeline from "./Timeline";
 
 const MAX_RADIUS_KM = 2;
 const COMPETITOR_LIMIT = 50;
 
 function formatDistance(meters: number) {
-  return meters < 1000 ? `${Math.round(meters)} m` : `${(meters / 1000).toFixed(2)} km`;
+  return meters < 1000
+    ? `${Math.round(meters)} m`
+    : `${(meters / 1000).toFixed(2)} km`;
 }
 
 function errorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
-  return message.replace(/^.*fatal error:\s*/, '');
+  return message.replace(/^.*fatal error:\s*/, "");
 }
 
 function App() {
@@ -34,7 +41,9 @@ function App() {
   const [scenarioEdits] = useTable(tables.scenario_edit);
   // 0 is the base universe: the real prices
   const [scenarioId, setScenarioId] = useState(0);
-  const [selectNewScenarioAfter, setSelectNewScenarioAfter] = useState<number | null>(null);
+  const [selectNewScenarioAfter, setSelectNewScenarioAfter] = useState<
+    number | null
+  >(null);
   const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
 
   const [businesses, businessesReady] = useTable(tables.business);
@@ -42,87 +51,134 @@ function App() {
   const [jobs] = useTable(tables.populate_job);
   const [reviews] = useTable(tables.review);
   const loadedReviews = new Map<string, number>();
-  for (const review of reviews) loadedReviews.set(review.placeId, (loadedReviews.get(review.placeId) ?? 0) + 1);
+  for (const review of reviews)
+    loadedReviews.set(
+      review.placeId,
+      (loadedReviews.get(review.placeId) ?? 0) + 1,
+    );
   const [agents] = useTable(tables.customer_agent);
   const agentCounts = new Map<string, number>();
-  for (const agent of agents) agentCounts.set(agent.placeId, (agentCounts.get(agent.placeId) ?? 0) + 1);
+  for (const agent of agents)
+    agentCounts.set(agent.placeId, (agentCounts.get(agent.placeId) ?? 0) + 1);
   const [totalAgents, setTotalAgents] = useState(30);
 
-  const [mapsUrl, setMapsUrl] = useState('');
+  const [mapsUrl, setMapsUrl] = useState("");
   const [radiusKm, setRadiusKm] = useState(1);
   const [maxCompetitors, setMaxCompetitors] = useState(20);
-  const [requestError, setRequestError] = useState('');
+  const [requestError, setRequestError] = useState("");
 
   const job = jobs[0];
-  const running = job?.status === 'running';
-  const store = businesses.find(b => b.placeId === job?.placeId);
-  const businessesById = new Map(businesses.map(b => [b.placeId, b]));
+  const running = job?.status === "running";
+  const store = businesses.find((b) => b.placeId === job?.placeId);
+  const businessesById = new Map(businesses.map((b) => [b.placeId, b]));
   const competitors = competitorLinks
-    .filter(link => link.placeId === store?.placeId)
-    .map(link => ({ link, business: businessesById.get(link.competitorPlaceId) }))
-    .filter(row => row.business)
+    .filter((link) => link.placeId === store?.placeId)
+    .map((link) => ({
+      link,
+      business: businessesById.get(link.competitorPlaceId),
+    }))
+    .filter((row) => row.business)
     .sort((a, b) => a.link.distanceMeters - b.link.distanceMeters);
 
   // The selected store's agents are listed first, then stores with the most reviews
   const storeRank = (placeId: string) =>
-    placeId === store?.placeId ? Number.MAX_SAFE_INTEGER : (businessesById.get(placeId)?.reviewsCount ?? 0);
+    placeId === store?.placeId
+      ? Number.MAX_SAFE_INTEGER
+      : (businessesById.get(placeId)?.reviewsCount ?? 0);
 
-  const onPopulate = (e: FormEvent<HTMLFormElement>) => {
+  const onPopulate = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (businesses.length > 0 && !window.confirm('This replaces all current store data. Continue?')) return;
-    setRequestError('');
-    populateStore({ mapsUrl: mapsUrl.trim(), radiusKm, maxCompetitors }).catch(error =>
-      setRequestError(errorMessage(error)),
-    );
+    if (
+      businesses.length > 0 &&
+      !window.confirm("This replaces all current store data. Continue?")
+    )
+      return;
+    setRequestError("");
+    try {
+      await populateStore({
+        mapsUrl: mapsUrl.trim(),
+        radiusKm,
+        maxCompetitors,
+      });
+      await generateAllAgents({ totalAgents });
+    } catch (error) {
+      setRequestError(errorMessage(error));
+    }
   };
 
   const onCreateAgents = () => {
-    if (agents.length > 0 && !window.confirm('This replaces the current agents. Continue?')) return;
-    setRequestError('');
-    generateAllAgents({ totalAgents }).catch(error => setRequestError(errorMessage(error)));
+    if (
+      agents.length > 0 &&
+      !window.confirm("This replaces the current agents. Continue?")
+    )
+      return;
+    setRequestError("");
+    generateAllAgents({ totalAgents }).catch((error) =>
+      setRequestError(errorMessage(error)),
+    );
   };
 
   // Reducers don't return ids, so a newly created scenario is selected once it shows up
   useEffect(() => {
     if (selectNewScenarioAfter === null) return;
-    const created = scenarios.filter(s => s.scenarioId > selectNewScenarioAfter);
+    const created = scenarios.filter(
+      (s) => s.scenarioId > selectNewScenarioAfter,
+    );
     if (created.length === 0) return;
-    setScenarioId(Math.max(...created.map(s => s.scenarioId)));
+    setScenarioId(Math.max(...created.map((s) => s.scenarioId)));
     setSelectNewScenarioAfter(null);
   }, [scenarios, selectNewScenarioAfter]);
 
   useEffect(() => {
-    if (scenarioId !== 0 && !scenarios.some(s => s.scenarioId === scenarioId)) setScenarioId(0);
+    if (scenarioId !== 0 && !scenarios.some((s) => s.scenarioId === scenarioId))
+      setScenarioId(0);
   }, [scenarios, scenarioId]);
 
   const onCreateScenario = () => {
-    setRequestError('');
-    setSelectNewScenarioAfter(Math.max(0, ...scenarios.map(s => s.scenarioId)));
-    createScenario({ name: `Scenario ${scenarios.length + 1}` }).catch(error => setRequestError(errorMessage(error)));
+    setRequestError("");
+    setSelectNewScenarioAfter(
+      Math.max(0, ...scenarios.map((s) => s.scenarioId)),
+    );
+    createScenario({ name: `Scenario ${scenarios.length + 1}` }).catch(
+      (error) => setRequestError(errorMessage(error)),
+    );
   };
 
   const onRenameScenario = () => {
-    const current = scenarios.find(s => s.scenarioId === scenarioId);
-    const name = current && window.prompt('Scenario name', current.name);
+    const current = scenarios.find((s) => s.scenarioId === scenarioId);
+    const name = current && window.prompt("Scenario name", current.name);
     if (!name) return;
-    renameScenario({ scenarioId, name }).catch(error => setRequestError(errorMessage(error)));
+    renameScenario({ scenarioId, name }).catch((error) =>
+      setRequestError(errorMessage(error)),
+    );
   };
 
   const onDeleteScenario = () => {
-    const current = scenarios.find(s => s.scenarioId === scenarioId);
-    if (!current || !window.confirm(`Delete "${current.name}" and all its changes?`)) return;
-    deleteScenario({ scenarioId }).catch(error => setRequestError(errorMessage(error)));
+    const current = scenarios.find((s) => s.scenarioId === scenarioId);
+    if (
+      !current ||
+      !window.confirm(`Delete "${current.name}" and all its changes?`)
+    )
+      return;
+    deleteScenario({ scenarioId }).catch((error) =>
+      setRequestError(errorMessage(error)),
+    );
   };
 
   const onFetchMenus = () => {
-    setRequestError('');
-    fetchMenus().catch(error => setRequestError(errorMessage(error)));
+    setRequestError("");
+    fetchMenus().catch((error) => setRequestError(errorMessage(error)));
   };
 
   const onClear = () => {
-    if (!window.confirm('Delete all stores, competitors, reviews, agents and menus?')) return;
-    setRequestError('');
-    clearStoreData().catch(error => setRequestError(errorMessage(error)));
+    if (
+      !window.confirm(
+        "Delete all stores, competitors, reviews, agents and menus?",
+      )
+    )
+      return;
+    setRequestError("");
+    clearStoreData().catch((error) => setRequestError(errorMessage(error)));
   };
 
   if (!connected) {
@@ -137,7 +193,11 @@ function App() {
     <main className="App">
       <header>
         <h1>Store &amp; Competitor Finder</h1>
-        <p className="muted">Paste a Google Maps link to load the store and every cafe, tea or drink shop around it.</p>
+        <p className="muted">
+          Paste a Google Maps link and how many customer agents you want. We
+          load the shops first, then pull at most 300 review texts in proportion
+          to each store&apos;s Google review total and turn those into personas.
+        </p>
       </header>
 
       <form className="card controls" onSubmit={onPopulate}>
@@ -147,7 +207,7 @@ function App() {
             type="url"
             placeholder="https://www.google.com/maps/place/..."
             value={mapsUrl}
-            onChange={e => setMapsUrl(e.target.value)}
+            onChange={(e) => setMapsUrl(e.target.value)}
             disabled={running}
             required
           />
@@ -164,7 +224,7 @@ function App() {
               max={MAX_RADIUS_KM}
               step={0.1}
               value={radiusKm}
-              onChange={e => setRadiusKm(Number(e.target.value))}
+              onChange={(e) => setRadiusKm(Number(e.target.value))}
               disabled={running}
             />
           </label>
@@ -176,8 +236,32 @@ function App() {
               max={COMPETITOR_LIMIT}
               step={1}
               value={maxCompetitors}
-              onChange={e =>
-                setMaxCompetitors(Math.min(COMPETITOR_LIMIT, Math.max(1, Math.round(Number(e.target.value)) || 1)))
+              onChange={(e) =>
+                setMaxCompetitors(
+                  Math.min(
+                    COMPETITOR_LIMIT,
+                    Math.max(1, Math.round(Number(e.target.value)) || 1),
+                  ),
+                )
+              }
+              disabled={running}
+            />
+          </label>
+          <label className="field max-field">
+            <span>Agents</span>
+            <input
+              type="number"
+              min={1}
+              max={200}
+              step={1}
+              value={totalAgents}
+              onChange={(e) =>
+                setTotalAgents(
+                  Math.min(
+                    200,
+                    Math.max(1, Math.round(Number(e.target.value)) || 1),
+                  ),
+                )
               }
               disabled={running}
             />
@@ -186,16 +270,23 @@ function App() {
 
         <div className="actions">
           <button type="submit" disabled={running || !mapsUrl.trim()}>
-            {running ? 'Populating...' : 'Populate'}
+            {running ? "Loading..." : "Load store & agents"}
           </button>
-          <button type="button" className="danger" onClick={onClear} disabled={running || businesses.length === 0}>
+          <button
+            type="button"
+            className="danger"
+            onClick={onClear}
+            disabled={running || businesses.length === 0}
+          >
             Clear data
           </button>
         </div>
       </form>
 
       {(job?.message || requestError) && (
-        <p className={`status ${requestError || job?.status === 'error' ? 'error' : job?.status}`}>
+        <p
+          className={`status ${requestError || job?.status === "error" ? "error" : job?.status}`}
+        >
           {running && <span className="spinner" />}
           {requestError || job?.message}
         </p>
@@ -212,7 +303,8 @@ function App() {
             {store.category} · {store.address}
           </p>
           <p>
-            ⭐ {store.rating.toFixed(1)} ({store.reviewsCount} reviews, {loadedReviews.get(store.placeId) ?? 0} loaded)
+            ⭐ {store.rating.toFixed(1)} ({store.reviewsCount} reviews,{" "}
+            {loadedReviews.get(store.placeId) ?? 0} loaded)
             {store.price && ` · ${store.price}`}
             {store.phone && ` · ${store.phone}`}
           </p>
@@ -223,10 +315,13 @@ function App() {
         <section className="card map-card">
           <div className="scenario-bar">
             <label>
-              Universe{' '}
-              <select value={scenarioId} onChange={e => setScenarioId(Number(e.target.value))}>
+              Universe{" "}
+              <select
+                value={scenarioId}
+                onChange={(e) => setScenarioId(Number(e.target.value))}
+              >
                 <option value={0}>Base (real prices)</option>
-                {scenarios.map(s => (
+                {scenarios.map((s) => (
                   <option key={s.scenarioId} value={s.scenarioId}>
                     {s.name}
                   </option>
@@ -238,15 +333,25 @@ function App() {
             </button>
             {scenarioId !== 0 && (
               <>
-                <button type="button" className="secondary" onClick={onRenameScenario}>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={onRenameScenario}
+                >
                   Rename
                 </button>
-                <button type="button" className="danger" onClick={onDeleteScenario}>
+                <button
+                  type="button"
+                  className="danger"
+                  onClick={onDeleteScenario}
+                >
                   Delete
                 </button>
               </>
             )}
-            <span className="muted">Click a store on the map to see its menu.</span>
+            <span className="muted">
+              Click a store on the map to see its menu.
+            </span>
           </div>
           <StoreMap
             store={store}
@@ -262,14 +367,20 @@ function App() {
               businessesById.get(selectedPlaceId) && (
                 <MenuPanel
                   business={businessesById.get(selectedPlaceId)!}
-                  distanceMeters={competitors.find(c => c.business?.placeId === selectedPlaceId)?.link.distanceMeters}
-                  items={menuItems.filter(i => i.placeId === selectedPlaceId)}
-                  edits={scenarioEdits.filter(e => e.scenarioId === scenarioId)}
+                  distanceMeters={
+                    competitors.find(
+                      (c) => c.business?.placeId === selectedPlaceId,
+                    )?.link.distanceMeters
+                  }
+                  items={menuItems.filter((i) => i.placeId === selectedPlaceId)}
+                  edits={scenarioEdits.filter(
+                    (e) => e.scenarioId === scenarioId,
+                  )}
                   isOwnStore={selectedPlaceId === store.placeId}
                   scenarioId={scenarioId}
                   onCreateScenario={onCreateScenario}
                   onClose={() => setSelectedPlaceId(null)}
-                  onError={error => setRequestError(errorMessage(error))}
+                  onError={(error) => setRequestError(errorMessage(error))}
                 />
               )
             }
@@ -279,10 +390,12 @@ function App() {
             ownPlaceId={store.placeId}
             agents={agents}
             scenarioId={scenarioId}
-            scenarioName={scenarios.find(s => s.scenarioId === scenarioId)?.name ?? 'Base'}
+            scenarioName={
+              scenarios.find((s) => s.scenarioId === scenarioId)?.name ?? "Base"
+            }
             running={running}
-            jobMessage={job?.message ?? ''}
-            onError={error => setRequestError(errorMessage(error))}
+            jobMessage={job?.message ?? ""}
+            onError={(error) => setRequestError(errorMessage(error))}
           />
         </section>
       )}
@@ -293,7 +406,11 @@ function App() {
             {competitors.length} competitors within {job?.radiusKm} km
           </h2>
           {competitors.length === 0 ? (
-            <p className="muted">{running ? 'Searching...' : 'No drink-focused places found in this radius.'}</p>
+            <p className="muted">
+              {running
+                ? "Searching..."
+                : "No drink-focused places found in this radius."}
+            </p>
           ) : (
             <table>
               <thead>
@@ -312,12 +429,18 @@ function App() {
                   <tr key={link.linkId}>
                     <td>{formatDistance(link.distanceMeters)}</td>
                     <td>
-                      <a href={business!.mapsUrl} target="_blank" rel="noreferrer">
+                      <a
+                        href={business!.mapsUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
                         {business!.name}
                       </a>
                     </td>
                     <td>{business!.category}</td>
-                    <td>{business!.rating ? business!.rating.toFixed(1) : '–'}</td>
+                    <td>
+                      {business!.rating ? business!.rating.toFixed(1) : "–"}
+                    </td>
                     <td>{business!.reviewsCount}</td>
                     <td>{loadedReviews.get(business!.placeId) ?? 0}</td>
                     <td>{agentCounts.get(business!.placeId) ?? 0}</td>
@@ -342,23 +465,40 @@ function App() {
         <section className="card controls">
           <h2>Customer agents</h2>
           <p className="muted">
-            Claude turns each store's reviews into customer personas. Stores get agents in proportion to their Google
-            review counts, and each agent stands for that many reviewers.
+            Agents are split by each store&apos;s Google review total, not by
+            how many texts we downloaded. We parse at most 300 reviews across
+            the map, more for bigger shops, then each agent stands for that
+            store&apos;s reviewers / its persona count.
           </p>
           <div className="actions">
             <label className="field max-field">
-              <span>Total agents</span>
+              <span>Agents</span>
               <input
                 type="number"
                 min={1}
-                max={100}
+                max={200}
                 value={totalAgents}
-                onChange={e => setTotalAgents(Math.min(100, Math.max(1, Math.round(Number(e.target.value)) || 1)))}
+                onChange={(e) =>
+                  setTotalAgents(
+                    Math.min(
+                      200,
+                      Math.max(1, Math.round(Number(e.target.value)) || 1),
+                    ),
+                  )
+                }
                 disabled={running}
               />
             </label>
-            <button type="button" onClick={onCreateAgents} disabled={running || reviews.length === 0}>
-              {running ? 'Working...' : agents.length > 0 ? 'Recreate agents' : 'Create agents'}
+            <button
+              type="button"
+              onClick={onCreateAgents}
+              disabled={running || !store}
+            >
+              {running
+                ? "Working..."
+                : agents.length > 0
+                  ? "Recreate agents"
+                  : "Create agents"}
             </button>
           </div>
           {agents.length > 0 && (
@@ -379,15 +519,24 @@ function App() {
                       a.placeId.localeCompare(b.placeId) ||
                       a.name.localeCompare(b.name),
                   )
-                  .map(agent => (
-                    <tr key={agent.agentId} className={agent.placeId === store.placeId ? 'own-store' : undefined}>
-                      <td>{businessesById.get(agent.placeId)?.name ?? '–'}</td>
+                  .map((agent) => (
+                    <tr
+                      key={agent.agentId}
+                      className={
+                        agent.placeId === store.placeId
+                          ? "own-store"
+                          : undefined
+                      }
+                    >
+                      <td>{businessesById.get(agent.placeId)?.name ?? "–"}</td>
                       <td>
                         <strong>{agent.name}</strong>
                         <div className="muted">{agent.archetype}</div>
                       </td>
                       <td>{agent.typicalOrder}</td>
-                      <td>≈{Math.round(agent.representsCustomers)} reviewers</td>
+                      <td>
+                        ≈{Math.round(agent.representsCustomers)} reviewers
+                      </td>
                     </tr>
                   ))}
               </tbody>
@@ -396,7 +545,9 @@ function App() {
         </section>
       )}
 
-      {!store && businessesReady && !running && <p className="muted empty">No store loaded yet.</p>}
+      {!store && businessesReady && !running && (
+        <p className="muted empty">No store loaded yet.</p>
+      )}
     </main>
   );
 }
