@@ -114,7 +114,7 @@ export function fetchAreaMap(ctx: ProcCtx, placeJson: string, competitorsJson: s
       data = res.json();
       break;
     } catch (err) {
-      errors.push(`${new URL(url).host}: ${String(err)}`);
+      errors.push(`${url.split('/')[2]}: ${String(err)}`); // (no URL class in the module runtime)
     }
   }
   if (!data) throw new Error(`OpenStreetMap unavailable (${errors.join('; ')})`);

@@ -1,0 +1,2 @@
+{ "baseUniverseId": 139, "label": "Cappuccino $5.50→$6.00", "brain": "ai", "copies": 10, "days": 60,
+  "options": [ { "label": "no change", "prices": {} }, { "label": "price change", "prices": { "cappuccino": 600 } } ] }

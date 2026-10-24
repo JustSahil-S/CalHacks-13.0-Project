@@ -7,6 +7,21 @@ import { callClaude, type ProcCtx } from './claude';
 import type { Place, Review } from './pipeline';
 
 export const MENU_CRAWLER = 'apify~website-content-crawler';
+
+// The SpacetimeDB module runtime has no URL class, so these do the little URL work we need.
+export function hostOf(url: string): string {
+  return /^https?:\/\/([^/?#]+)/i.exec(url ?? '')?.[1]?.toLowerCase() ?? '';
+}
+
+export function resolveUrl(src: string, base: string): string {
+  if (/^https?:\/\//i.test(src)) return src;
+  if (src.startsWith('//')) return `https:${src}`;
+  const origin = /^https?:\/\/[^/?#]+/i.exec(base)?.[0];
+  if (!origin) return '';
+  if (src.startsWith('/')) return origin + src;
+  const dir = base.split(/[?#]/)[0].replace(/[^/]*$/, '');
+  return dir + src;
+}
 export const SEARCH_ACTOR = 'apify~google-search-scraper';
 
 /** Search Google for the café's menu: priced menus often live on an ordering page, not the homepage. */
@@ -22,13 +37,7 @@ const SKIP = /google\.|yelp\.|instagram\.|facebook\.|tripadvisor\.|tiktok\.|redd
 
 /** Best menu page among search results: ordering page > their own menu page > menu sites > delivery apps. */
 export function pickMenuUrl(results: { url: string; title?: string }[], website: string): string {
-  const own = (() => {
-    try {
-      return new URL(website).hostname.replace(/^www\./, '');
-    } catch {
-      return '';
-    }
-  })();
+  const own = hostOf(website).replace(/^www\./, '');
   let best = '';
   let bestScore = 0;
   for (const r of results) {
@@ -80,13 +89,7 @@ export function menuCrawlInput(url: string, isMenuLink: boolean) {
 function menuAssets(pages: { url: string; html?: string }[]): { kind: 'image' | 'document'; url: string }[] {
   const out: { kind: 'image' | 'document'; url: string }[] = [];
   const seen = new Set<string>();
-  const abs = (src: string, base: string) => {
-    try {
-      return new URL(src, base).toString();
-    } catch {
-      return '';
-    }
-  };
+  const abs = resolveUrl;
   for (const page of pages) {
     const html = page.html ?? '';
     for (const m of html.matchAll(/<a\b[^>]*href=["']([^"']+\.pdf[^"']*)["'][^>]*>([\s\S]{0,200}?)<\/a>/gi)) {
