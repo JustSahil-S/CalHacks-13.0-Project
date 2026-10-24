@@ -364,6 +364,16 @@ export const rivalJob = table(
   { scheduledId: t.u64().primaryKey().autoInc(), scheduledAt: t.scheduleAt(), buildId: t.u64() }
 );
 
+// Partners (the Mana app's server-side tools) may build twins, rate-limited. Join with
+// claim_partner + PARTNER_KEY. They can't reset, run the clock or do other admin actions.
+export const partner = table({ name: 'partner', public: true }, { identity: t.identity().primaryKey() });
+
+// Who started each build, and when (for the partner rate limit).
+export const buildOwner = table(
+  { name: 'build_owner', public: true },
+  { buildId: t.u64().primaryKey(), identity: t.identity(), createdAt: t.timestamp() }
+);
+
 // Identities allowed to run admin actions (builds, resets, clock). Join with claim_admin + ADMIN_KEY.
 export const admin = table({ name: 'admin', public: true }, { identity: t.identity().primaryKey() });
 
@@ -436,6 +446,8 @@ const spacetimedb = schema(
     areaMap,
     mapJob,
     admin,
+    partner,
+    buildOwner,
     rival,
     universeBuild,
     experimentRadius,
@@ -449,6 +461,7 @@ const spacetimedb = schema(
       ANTHROPIC_API_KEY: t.option(t.string()),
       APIFY_TOKEN: t.option(t.string()),
       ADMIN_KEY: t.option(t.string()),
+      PARTNER_KEY: t.option(t.string()),
     },
   }
 );

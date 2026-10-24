@@ -5,7 +5,7 @@ import { ScheduleAt } from 'spacetimedb';
 import spacetimedb, { buildJob, clockJob, decisionJob, mapJob, profileJob, rivalJob } from './schema';
 import { fetchAreaMap } from './areamap';
 import { callClaude } from './claude';
-import { advanceBuild, advanceRivalScan, inspectMenuCrawl, profileBatch, SCAN } from './pipeline';
+import { advanceBuild, advanceRivalScan, fixedCosts, inspectMenuCrawl, nominalRevenuePerDay, profileBatch, SCAN } from './pipeline';
 import { DEFAULT_RADIUS_M, MAX_RADIUS_M } from './rivals';
 import {
   applyPrices,
@@ -39,6 +39,26 @@ function requireAdmin(ctx: Ctx) {
   if (!isAdmin(ctx)) throw new SenderError('Only the Fork team can do that.');
 }
 
+const PARTNER_BUILDS_PER_HOUR = 6;
+
+/** Admins can build twins freely; partners (the Mana app's tools) up to 6 per hour. */
+function requireBuilder(ctx: Ctx) {
+  if (isAdmin(ctx)) return;
+  if (ctx.db.partner.identity.find(ctx.sender) === null) throw new SenderError('Only the Fork team can do that.');
+  const hourAgo = ctx.timestamp.microsSinceUnixEpoch - 3_600_000_000n;
+  const recent = [...ctx.db.buildOwner.iter()].filter(
+    o => o.identity.isEqual(ctx.sender) && o.createdAt.microsSinceUnixEpoch > hourAgo
+  ).length;
+  if (recent >= PARTNER_BUILDS_PER_HOUR) throw new SenderError('Build limit reached (6 per hour). Try again later.');
+}
+
+/** Join the partner list with the secret PARTNER_KEY stored in this database's settings. */
+export const claim_partner = spacetimedb.reducer({ key: t.string() }, (ctx, { key }) => {
+  const want = ctx.env.PARTNER_KEY;
+  if (!want || key !== want) throw new SenderError('Wrong partner key.');
+  if (ctx.db.partner.identity.find(ctx.sender) === null) ctx.db.partner.insert({ identity: ctx.sender });
+});
+
 /** Join the admin list with the secret ADMIN_KEY stored in this database's settings. */
 export const claim_admin = spacetimedb.reducer({ key: t.string() }, (ctx, { key }) => {
   const want = ctx.env.ADMIN_KEY;
@@ -55,6 +75,19 @@ function parseJson<T>(raw: string, what: string): T {
 }
 
 // ---- Twins and universes ---------------------------------------------------
+
+// Admin: re-set rent and wages on every built twin from its own revenue (see fixedCosts).
+export const refit_costs = spacetimedb.reducer(ctx => {
+  requireAdmin(ctx);
+  for (const u of ctx.db.universe.iter()) {
+    if (u.parentId !== 0n) continue;
+    const c = ctx.db.cafe.universeId.find(u.id);
+    if (!c) continue;
+    const prices = new Map([...ctx.db.menuItem.universeId.filter(u.id)].map(m => [m.key, m.priceCents]));
+    const people = [...ctx.db.agent.universeId.filter(u.id)].map(a => ({ visitsPerWeek: a.visitsPerWeek, order: JSON.parse(a.usualOrder) as string[] }));
+    ctx.db.cafe.universeId.update({ ...c, ...fixedCosts(nominalRevenuePerDay(people, prices, c.customerScale)) });
+  }
+});
 
 export const load_twin = spacetimedb.reducer({ twinJson: t.string() }, (ctx, { twinJson }) => {
   requireAdmin(ctx);
@@ -204,7 +237,7 @@ export const clear_cache = spacetimedb.reducer({ onlyFallbacks: t.bool() }, (ctx
 export const start_twin_build = spacetimedb.reducer(
   { query: t.string(), label: t.string(), menuJson: t.string(), cutoffDate: t.string() },
   (ctx, { query, label, menuJson, cutoffDate }) => {
-  requireAdmin(ctx);
+    requireBuilder(ctx);
     // An empty menu means "find it": read from their site/ordering page, else estimate.
     const menu = parseJson<{ key: string; name: string; priceCents: number }[]>(menuJson || '[]', 'menuJson');
     if (!Array.isArray(menu)) throw new SenderError('menuJson must be a list');
@@ -231,6 +264,7 @@ export const start_twin_build = spacetimedb.reducer(
       twinJson: '',
       universeId: 0n,
     });
+    ctx.db.buildOwner.insert({ buildId: b.id, identity: ctx.sender, createdAt: ctx.timestamp });
     ctx.db.buildJob.insert({
       scheduledId: 0n,
       scheduledAt: ScheduleAt.time(ctx.timestamp.microsSinceUnixEpoch),

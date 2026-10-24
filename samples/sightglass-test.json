@@ -1,0 +1,2 @@
+{ "baseUniverseId": 402, "label": "Latte $5.50→$6.00 · rivals within 0.75 mi", "brain": "ai", "copies": 10, "days": 60, "radiusM": 1207,
+  "options": [ { "label": "no change", "prices": {} }, { "label": "price change", "prices": { "latte": 600 } } ] }

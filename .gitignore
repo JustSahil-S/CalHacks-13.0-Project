@@ -1,6 +1,7 @@
 *.log
 .admin-key
 .env
+.partner-key
 .stdb-identity.json
 client/dist-single/
 client/dist/

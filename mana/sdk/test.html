@@ -1,0 +1,20 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Fork SDK test</title>
+<style>body{margin:0;font:13px sans-serif;background:#f3eee4}#map{position:fixed;inset:0}#log{position:fixed;left:8px;top:8px;background:#fff;padding:8px;max-width:420px;white-space:pre-wrap;z-index:5}</style></head>
+<body><div id="map"></div><div id="log">loading…</div>
+<script type="module">
+  const log = (s) => (document.getElementById('log').textContent = s);
+  const { connectFork, ForkMap } = await import('./fork-sdk.js');
+  const fork = await connectFork();
+  const want = new URLSearchParams(location.search).get('cafe');
+  const cafes = fork.cafes().filter(c => c.mapReady);
+  const cafe = cafes.find(c => String(c.buildId) === want) ?? cafes[0];
+  const map = new ForkMap(document.getElementById('map'), fork);
+  await map.showCafe(cafe.buildId);
+  map.setRadius(805);
+  const exps = fork.experiments(cafe.universeId);
+  window.__fork = { fork, map, cafe, exps };
+  if (exps[0]) { await fork.watchExperiment(exps[0].id); await map.showExperiment(exps[0].id); map.play(); }
+  map.onDay = (d) => { window.__day = d; };
+  log(`cafes: ${cafes.length}\nshowing: ${cafe.name} (menu ${cafe.menuSource})\nrivals within 0.5 mi: ${fork.rivals(cafe.buildId).filter(r => r.distanceM <= 805).length}\nexperiments: ${exps.length}${exps[0] ? '\nlatest: ' + JSON.stringify(fork.results(exps[0].id), (k,v)=> typeof v === 'bigint' ? Number(v) : v) : ''}`);
+</script></body></html>

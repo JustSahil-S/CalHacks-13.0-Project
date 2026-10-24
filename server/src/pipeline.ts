@@ -225,7 +225,7 @@ export function advanceBuild(ctx: ProcCtx, buildId: bigint) {
         .map((x: any) => ({ date: String(x.publishedAtDate).slice(0, 10), stars: x.stars ?? 0, text: x.text ?? '' }))
         .sort((x: Review, y: Review) => x.date.localeCompare(y.date));
       const competitors =
-        c.status === 'SUCCEEDED' && c.datasetId ? datasetItems(ctx, token!, c.datasetId, PLACE_FIELDS, 20) : [];
+        c.status === 'SUCCEEDED' && c.datasetId ? datasetItems(ctx, token!, c.datasetId, PLACE_FIELDS, 100) : [];
 
       if (b.cutoffDate === SCAN) {
         update({
@@ -674,6 +674,8 @@ export function assembleTwin(
   }
 
   const nearest = pickCompetitor(place, competitors);
+  const prices = new Map(menu.map(m => [m.key, m.priceCents]));
+  const costs = fixedCosts(nominalRevenuePerDay(customers.map(c => ({ visitsPerWeek: c.visitsPerWeek, order: c.usualOrder })), prices, 4));
 
   return {
     cafe: {
@@ -682,8 +684,7 @@ export function assembleTwin(
       closeHour: close,
       servicePerHour: 60, // estimate
       customerScale: 4, // estimate: each simulated customer stands for 4 real ones
-      rentPerDayCents: 40000, // estimate
-      wagesPerDayCents: 90000, // estimate
+      ...costs, // estimate: scaled to this cafe's own revenue
     },
     menu: menu.map(m => ({
       key: m.key,
@@ -704,4 +705,22 @@ export function assembleTwin(
       : [],
     customers,
   };
+}
+
+// What the cafe takes in on a normal day if everyone keeps their habit (cents).
+export function nominalRevenuePerDay(
+  customers: { visitsPerWeek: number; order: string[] }[],
+  prices: Map<string, number>,
+  scale: number
+): number {
+  let total = 0;
+  for (const c of customers) total += (c.visitsPerWeek / 7) * c.order.reduce((s, k) => s + (prices.get(k) ?? 0), 0) * scale;
+  return total;
+}
+
+// Rent and wages as typical shares of a cafe's revenue (about 12% and 36%), so with ~30% cost of
+// goods a twin earns a normal ~15% margin instead of a flat cost that small cafes can never cover.
+export function fixedCosts(revenuePerDayCents: number) {
+  const r = Math.max(revenuePerDayCents, 20000);
+  return { rentPerDayCents: Math.round(r * 0.12), wagesPerDayCents: Math.round(r * 0.36) };
 }
