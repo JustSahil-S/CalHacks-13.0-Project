@@ -1,8 +1,10 @@
 // Getting a café's real menu without anyone typing it:
-//   1. Crawl the menu link Google gives us (their site or online-ordering page) and have
-//      Claude read the items and prices, including menu images and PDFs on that page.
-//   2. If that finds nothing priced, Claude builds a clearly labeled estimate from what
-//      reviewers mention and the café's price level.
+//   1. Search Google for "<café> <city> menu" and rank the results that are really this café:
+//      its online-ordering page, its own menu page, Google's menu link, then its website.
+//   2. Crawl the best one and have Claude read items and prices (menu images and PDFs too);
+//      if a page yields nothing priced, try the next (up to 4 pages).
+//   3. If none works, Claude builds a clearly labeled estimate from what reviewers mention
+//      and the café's price level. (Mana's browser agent can later replace it with the real one.)
 import { callClaude, type ProcCtx } from './claude';
 import type { Place, Review } from './pipeline';
 
@@ -24,44 +26,100 @@ export function resolveUrl(src: string, base: string): string {
 }
 export const SEARCH_ACTOR = 'apify~google-search-scraper';
 
-/** Search Google for the café's menu: priced menus often live on an ordering page, not the homepage. */
-export function menuSearchInput(place: Place) {
-  const city = (place.address ?? '').split(',').slice(-3, -2)[0]?.trim() ?? '';
-  return { queries: `${place.title} ${city} menu`, maxPagesPerQuery: 1, countryCode: 'us', languageCode: 'en' };
+/** The city in a Google Maps address ("street, City, ST 12345[, Country]"). */
+export function cityOf(address: string): string {
+  const parts = (address ?? '').split(',').map(x => x.trim()).filter(Boolean);
+  const stateZip = parts.findIndex(x => /^[A-Z]{2}\s+\d{5}/.test(x));
+  if (stateZip > 0) return parts[stateZip - 1];
+  if (parts.length >= 3 && /^(usa|us|united states)$/i.test(parts[parts.length - 1])) return parts[parts.length - 3];
+  return parts.length >= 2 ? parts[parts.length - 2] : '';
 }
 
-// Online-ordering platforms list every item with in-store prices.
-const ORDERING = /toasttab\.com|square\.site|squareup\.com|order\.online|chownow\.com|clover\.com|spoton\.com|olo\.com|menufy\.com|popmenu\.com|bentobox|orders?\./i;
-const DELIVERY = /doordash\.com|ubereats\.com|grubhub\.com|seamless\.com|postmates\.com/i; // prices usually marked up
+/** Search Google for the café's menu: priced menus often live on an ordering page, not the homepage. */
+export function menuSearchInput(place: Place) {
+  const queries = `${place.title} ${cityOf(place.address ?? '')} menu`.replace(/\s+/g, ' ');
+  return { queries, maxPagesPerQuery: 1, countryCode: 'us', languageCode: 'en' };
+}
+
+// Online-ordering platforms a café runs itself list every item at (about) in-store prices.
+const ORDERING = /toasttab\.com|square\.site|squareup\.com|order\.online|chownow\.com|clover\.com|spoton\.com|olo\.com|menufy\.com|popmenu\.com|bentobox|^https?:\/\/(www\.)?orders?\./i;
+// Delivery marketplaces (prices usually marked up) and third-party menu sites (often stale or blocked).
+const DELIVERY = /doordash\.com|ubereats\.com|grubhub\.com|seamless\.com|postmates\.com|fantuan|hungrypanda|ricepo|chowbus|caviar\.com/i;
+const THIRD_PARTY = /res-discover\.com|allmenus\.com|menupages\.com|menupix\.com|sirved\.com|zmenu\.com|restaurantji\.com|menuweb|singlemenu|menu-world|shopcoffee\.com/i;
 const SKIP = /google\.|yelp\.|instagram\.|facebook\.|tripadvisor\.|tiktok\.|reddit\.|x\.com|twitter\./i;
 
 /** How good a search result looks as a menu page: ordering page > their own menu page > menu sites > delivery apps. */
 export function menuUrlScore(url: string, website: string): number {
   const own = hostOf(website).replace(/^www\./, '');
   if (!url.startsWith('http') || SKIP.test(url)) return 0;
+  if (DELIVERY.test(url) || THIRD_PARTY.test(url)) return 1;
   if (ORDERING.test(url)) return 6;
-  if (own && url.includes(own) && /menu/i.test(url)) return 5;
-  if (/menu/i.test(url) && !DELIVERY.test(url)) return 3;
-  if (own && url.includes(own)) return 2;
-  if (DELIVERY.test(url)) return 1;
+  if (own && hostOf(url).endsWith(own) && /menu/i.test(url)) return 5;
+  if (/menu/i.test(url)) return 3;
+  if (own && hostOf(url).endsWith(own)) return 2;
   return 0;
 }
 
-/** Best menu page among search results (first one wins a tie). */
-export function pickMenuUrl(results: { url: string; title?: string }[], website: string): string {
-  let best = '';
-  let bestScore = 0;
-  for (const r of results) {
-    const score = menuUrlScore(r.url ?? '', website);
-    if (score > bestScore) {
-      best = r.url;
-      bestScore = score;
-    }
+const fold = (x: string) =>
+  (x ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+const CORPORATE = new Set(['co', 'company', 'llc', 'inc', 'the', 'and', 'ltd']);
+const GENERIC = new Set(['coffee', 'cafe', 'caffe', 'espresso', 'roasters', 'roastery', 'roasting', 'bakery', 'tea', 'house', 'shop', 'kitchen', 'bar', 'bread']);
+
+/**
+ * Is this search result about this café (not a namesake elsewhere)? Every word of its name must
+ * appear in the result's title, URL or snippet, or at least the distinctive words plus the city.
+ */
+export function matchesCafe(r: { url?: string; title?: string; description?: string }, place: Place): boolean {
+  const hay = fold(`${r.title ?? ''} ${r.url ?? ''} ${r.description ?? ''}`);
+  const words = (place.title ?? '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(w => w.length > 2 && !CORPORATE.has(w));
+  if (!words.length) return false;
+  if (words.every(w => hay.includes(w))) return true;
+  const distinctive = words.filter(w => !GENERIC.has(w));
+  const city = fold(cityOf(place.address ?? ''));
+  return distinctive.length > 0 && distinctive.every(w => hay.includes(w)) && !!city && hay.includes(city);
+}
+
+/**
+ * Menu pages worth crawling, best first (at most 4): search results that are this café,
+ * Google's own menu link for the place, and finally the café's website.
+ */
+export function menuCandidates(results: { url: string; title?: string; description?: string }[], place: Place): string[] {
+  const website = place.website ?? '';
+  const own = hostOf(website).replace(/^www\./, '');
+  const scored: { url: string; score: number; rank: number }[] = [];
+  results.forEach((r, rank) => {
+    const url = r.url ?? '';
+    const ownSite = !!own && hostOf(url).endsWith(own);
+    if (!ownSite && !matchesCafe(r, place)) return;
+    const score = menuUrlScore(url, website);
+    if (score > 0) scored.push({ url, score, rank });
+  });
+  // Google's menu link belongs to this exact place: trust it, ranked by what kind of page it is.
+  if (place.menu?.startsWith('http')) {
+    scored.push({ url: place.menu, score: Math.max(menuUrlScore(place.menu, website), 2) + 0.5, rank: -1 });
   }
-  return best;
+  // Their own website, unless a page of it already made the list: above delivery and third-party pages.
+  if (website.startsWith('http') && !scored.some(x => own && hostOf(x.url).endsWith(own))) {
+    scored.push({ url: website, score: 2, rank: results.length });
+  }
+  scored.sort((a, b) => b.score - a.score || a.rank - b.rank);
+  const urls: string[] = [];
+  for (const x of scored) if (!urls.includes(x.url)) urls.push(x.url);
+  return urls.slice(0, 4);
+}
+
+/** Best menu page among search results (the build crawls menuCandidates in this order). */
+export function pickMenuUrl(results: { url: string; title?: string; description?: string }[], place: Place): string {
+  return menuCandidates(results, place)[0] ?? '';
 }
 
 export const isDeliveryUrl = (url: string) => DELIVERY.test(url);
+export const isThirdPartyUrl = (url: string) => THIRD_PARTY.test(url);
 
 export interface MenuItemIn {
   key: string;
@@ -207,15 +265,23 @@ export function readMenuFromPages(
   return { items: res.ok ? toItems(res.data.items) : [], note: res.ok ? res.data.note : '', usedAssets: assets.length, error: res.error };
 }
 
+/** A review cut to ~300 characters, keeping every sentence that names a price. */
+function snippet(text: string): string {
+  const t = text.replace(/\s+/g, ' ').trim();
+  if (t.length <= 300 || !/\$\s?\d/.test(t)) return t.slice(0, 300);
+  const priced = (t.match(/[^.!?]*\$\s?\d[^.!?]*[.!?]?/g) ?? []).map(x => x.trim()).join(' … ');
+  return `${t.slice(0, 120)} … ${priced}`.slice(0, 420);
+}
+
 /** Last resort: a typical menu for this café, estimated from reviews and price level. Labeled as an estimate. */
 export function estimateMenu(ctx: ProcCtx, place: Place, reviews: Review[]): { items: MenuItemIn[]; note: string; error: string } {
   const mentions = reviews
     .filter(r => /\$\s?\d|latte|espresso|cappuccino|mocha|drip|cold brew|matcha|chai|croissant|pastr|scone|muffin|bagel|toast|sandwich/i.test(r.text))
     .slice(-60)
-    .map(r => r.text.replace(/\s+/g, ' ').slice(0, 300));
+    .map(r => snippet(r.text));
   const prompt = [
     `Estimate the everyday menu of ${place.title}, a ${place.categoryName ?? 'café'} at ${place.address ?? 'an unknown address'}.`,
-    `Google price level: ${place.price ?? 'unknown'}. Its real menu could not be found online.`,
+    `Google price level: ${place.price ?? 'unknown'}. Its real menu could not be read online.`,
     'Use the items and any prices customers mention in the reviews below; fill gaps with prices typical for',
     'a café like this in this city today.',
     MENU_RULES,

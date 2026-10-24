@@ -7,7 +7,7 @@ import { callClaude, type ProcCtx } from './claude';
 import { hash32 } from './rng';
 import { loadTwin, type Ctx, type TwinInput } from './sim';
 import { MAX_RADIUS_M, rivalsFromPlaces } from './rivals';
-import { estimateMenu, isDeliveryUrl, MENU_CRAWLER, menuCrawlInput, menuSearchInput, menuUrlScore, pickMenuUrl, readMenuFromPages, SEARCH_ACTOR } from './menu';
+import { estimateMenu, isDeliveryUrl, isThirdPartyUrl, matchesCafe, menuCandidates, MENU_CRAWLER, menuCrawlInput, menuSearchInput, menuUrlScore, readMenuFromPages, SEARCH_ACTOR } from './menu';
 
 const PLACES_ACTOR = 'compass~crawler-google-places';
 const REVIEWS_ACTOR = 'compass~google-maps-reviews-scraper';
@@ -212,17 +212,16 @@ export function advanceBuild(ctx: ProcCtx, buildId: bigint) {
         if (stillRunning(s.status)) return checkBackIn(8);
         const place: Place = JSON.parse(b.placeJson);
         const results = s.status === 'SUCCEEDED' ? datasetItems(ctx, token!, s.datasetId, 'organicResults', 1)[0]?.organicResults ?? [] : [];
-        const picked = pickMenuUrl(results, place.website ?? '');
-        const url = picked || place.menu || place.website || '';
-        const runId = url ? startRun(ctx, token!, MENU_CRAWLER, menuCrawlInput(url, !!picked || !!place.menu)) : '';
-        const next = {
-          ...ms,
-          status: url ? 'crawling' : 'none',
-          url,
-          runId,
-          detail: url ? `Reading the menu at ${url}${isDeliveryUrl(url) ? ' (delivery app; prices may be marked up)' : ''}` : 'No menu page found online',
-        };
-        ctx.withTx(tx => tx.db.menuSource.buildId.update(next));
+        const candidates = menuCandidates(results, place);
+        const url = candidates[0] ?? '';
+        const runId = url ? startRun(ctx, token!, MENU_CRAWLER, menuCrawlInput(url, url !== place.website)) : '';
+        const next = { ...ms, status: url ? 'crawling' : 'none', url, runId, detail: url ? readingNote(url) : 'No menu page found online' };
+        ctx.withTx(tx => {
+          tx.db.menuSource.buildId.update(next);
+          const row = { buildId, remainingJson: JSON.stringify(candidates.slice(1)), triedJson: '[]' };
+          if (tx.db.menuCandidate.buildId.find(buildId)) tx.db.menuCandidate.buildId.update(row);
+          else tx.db.menuCandidate.insert(row);
+        });
         ms = next;
       }
       const m = ms?.status === 'crawling' && ms.runId ? runStatus(ctx, token!, ms.runId) : null;
@@ -256,10 +255,41 @@ export function advanceBuild(ctx: ProcCtx, buildId: bigint) {
       let menuJson = b.menuJson;
       if (!hasMenu(menuJson)) {
         const beforeCutoff = reviews.filter(x => !b.cutoffDate || x.date < b.cutoffDate);
-        const found = resolveMenu(ctx, token!, ms?.url ?? '', m, place, beforeCutoff);
+        const read = m?.status === 'SUCCEEDED' ? readMenuFromPages(ctx, datasetItems(ctx, token!, m.datasetId, 'url,markdown,text,html', 5), place) : null;
+        if ((!read || read.items.length < 3) && ms?.url) {
+          // Nothing priced on this page: move on to the next candidate, if any, before estimating.
+          const why = !m ? 'not crawled' : m.status !== 'SUCCEEDED' ? `crawl ${m.status}` : read?.error || 'no prices found';
+          const triedNote = `${ms.url} (${why})`;
+          const nextUrl = ctx.withTx(tx => {
+            const c = tx.db.menuCandidate.buildId.find(buildId);
+            return c ? ((JSON.parse(c.remainingJson) as string[])[0] ?? '') : '';
+          });
+          // Start the next crawl before recording anything, so an Apify "busy" retry loses no page.
+          const runId = nextUrl ? startRun(ctx, token!, MENU_CRAWLER, menuCrawlInput(nextUrl, nextUrl !== place.website)) : '';
+          ctx.withTx(tx => {
+            const c = tx.db.menuCandidate.buildId.find(buildId);
+            if (!c) return;
+            const remaining: string[] = JSON.parse(c.remainingJson);
+            const tried: string[] = JSON.parse(c.triedJson);
+            if (!tried.includes(triedNote)) tried.push(triedNote);
+            if (nextUrl) {
+              remaining.shift();
+              tx.db.menuSource.buildId.update({ ...ms!, status: 'crawling', url: nextUrl, runId, detail: readingNote(nextUrl) });
+            }
+            tx.db.menuCandidate.buildId.update({ ...c, remainingJson: JSON.stringify(remaining), triedJson: JSON.stringify(tried) });
+          });
+          if (nextUrl) return checkBackIn(10);
+        }
+        const tried: string[] = ctx.withTx(tx => {
+          const c = tx.db.menuCandidate.buildId.find(buildId);
+          return c ? JSON.parse(c.triedJson) : [];
+        });
+        const found = resolveMenu(ctx, ms?.url ?? '', read, m?.status ?? '', place, beforeCutoff, tried);
         menuJson = JSON.stringify(found.items);
         ctx.withTx(tx => {
-          const row = { buildId, status: 'ready', source: found.source, url: ms?.url ?? '', runId: ms?.runId ?? '', detail: found.detail };
+          // An estimate has no source page; the pages tried are listed in the detail instead.
+          const url = found.source === 'estimated' ? '' : ms?.url ?? '';
+          const row = { buildId, status: 'ready', source: found.source, url, runId: ms?.runId ?? '', detail: found.detail };
           if (tx.db.menuSource.buildId.find(buildId)) tx.db.menuSource.buildId.update(row);
           else tx.db.menuSource.insert(row);
         });
@@ -449,7 +479,7 @@ export function inspectMenuSearch(ctx: ProcCtx, buildId: bigint): string {
       continue;
     }
     if (input?.queries !== want) continue;
-    const results: { url: string; title?: string }[] =
+    const results: { url: string; title?: string; description?: string }[] =
       r.status === 'SUCCEEDED' ? datasetItems(ctx, token, r.defaultDatasetId, 'organicResults', 1)[0]?.organicResults ?? [] : [];
     return JSON.stringify({
       runId: r.id,
@@ -457,8 +487,14 @@ export function inspectMenuSearch(ctx: ProcCtx, buildId: bigint): string {
       status: r.status,
       query: want,
       website: place.website ?? '',
-      picked: pickMenuUrl(results, place.website ?? ''),
-      results: results.map((x, i) => ({ rank: i + 1, url: x.url, title: x.title, score: menuUrlScore(x.url ?? '', place.website ?? '') })),
+      candidates: menuCandidates(results, place),
+      results: results.map((x, i) => ({
+        rank: i + 1,
+        url: x.url,
+        title: x.title,
+        score: menuUrlScore(x.url ?? '', place.website ?? ''),
+        thisCafe: matchesCafe(x, place),
+      })),
     });
   }
   return JSON.stringify({ error: `no search run found for "${want}"` });
@@ -489,6 +525,9 @@ export function queueProfileJobs(tx: Pick<Ctx, 'db' | 'timestamp'>, buildId: big
   return batches.length;
 }
 
+const readingNote = (url: string) =>
+  `Reading the menu at ${url}${isDeliveryUrl(url) ? ' (delivery app; prices may be marked up)' : isThirdPartyUrl(url) ? ' (third-party menu site; may be out of date)' : ''}`;
+
 export function hasMenu(menuJson: string): boolean {
   try {
     const m = JSON.parse(menuJson || '[]');
@@ -500,16 +539,15 @@ export function hasMenu(menuJson: string): boolean {
 
 function resolveMenu(
   ctx: ProcCtx,
-  token: string,
   url: string,
-  crawl: { status: string; datasetId: string } | null,
+  read: ReturnType<typeof readMenuFromPages> | null,
+  crawlStatus: string,
   place: Place,
-  reviews: Review[]
+  reviews: Review[],
+  tried: string[]
 ): { items: ReturnType<typeof estimateMenu>['items']; source: string; detail: string } {
-  let why = url ? '' : 'No website or menu link on Google. ';
-  if (crawl?.status === 'SUCCEEDED') {
-    const pages = datasetItems(ctx, token, crawl.datasetId, 'url,markdown,text,html', 5);
-    const read = readMenuFromPages(ctx, pages, place);
+  let why = url ? '' : 'No menu page for this café found online. ';
+  if (read) {
     if (read.items.length >= 3) {
       const isDrink = (c: string) => /coffee|tea|drink/i.test(c);
       // A café menu with no drinks usually means we found the food page only: add estimated drinks.
@@ -533,9 +571,10 @@ function resolveMenu(
       };
     }
     why = `Menu page had no readable prices${read.error ? ` (${read.error.slice(0, 120)})` : ''}. `;
-  } else if (crawl) {
-    why = `Menu crawl ${crawl.status}. `;
+  } else if (crawlStatus) {
+    why = `Menu crawl ${crawlStatus}. `;
   }
+  if (tried.length) why += `Tried: ${tried.map(t => t.slice(0, 140)).join('; ')}. `;
   const est = estimateMenu(ctx, place, reviews);
   return { items: est.items, source: 'estimated', detail: `${why}Estimated: ${est.note || est.error}`.trim() };
 }

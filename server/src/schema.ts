@@ -268,6 +268,16 @@ export const twinBuild = table(
 
 // Where a build's menu came from: read from their site/ordering page, from menu photos,
 // estimated, or provided by the caller (e.g. documented old prices for a backtest).
+// Menu pages still to try for a build, best first (the build crawls one at a time).
+export const menuCandidate = table(
+  { name: 'menu_candidate' },
+  {
+    buildId: t.u64().primaryKey(),
+    remainingJson: t.string(), // string[] of URLs not tried yet
+    triedJson: t.string(), // string[] of URLs tried, with why each failed
+  }
+);
+
 export const menuSource = table(
   { name: 'menu_source', public: true },
   {
@@ -461,6 +471,7 @@ const spacetimedb = schema(
     twinBuild,
     buildCard,
     menuSource,
+    menuCandidate,
     twinProfile,
     buildJob,
     profileJob,
