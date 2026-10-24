@@ -4,7 +4,7 @@ Build a Mana app called **Fork**: a flight simulator for a café owner's price c
 Import everything from this one ES module (it bundles SpacetimeDB + Three.js; IDs are BigInt):
 
 ```js
-import { connectFork, ForkMap, DEFAULT_RADIUS_M, MAX_RADIUS_M } from 'https://cdn.jsdelivr.net/gh/JustSahil-S/CalHacks-13.0-Project@COMMIT/mana/sdk/fork-sdk.js';
+import { connectFork, ForkMap, DEFAULT_RADIUS_M, MAX_RADIUS_M } from 'https://cdn.jsdelivr.net/gh/JustSahil-S/CalHacks-13.0-Project@7699547/mana/sdk/fork-sdk.js';
 const fork = await connectFork();               // live connection to the cloud database
 fork.onChange(() => rerender());                // fires whenever live data changes
 fork.cafes()            // [{ buildId, universeId, name, address, rating, reviewsCount, backtestCutoff, menuSource, mapReady }]
