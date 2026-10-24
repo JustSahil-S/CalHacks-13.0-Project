@@ -21,6 +21,31 @@ export const AgentEvent = __t.object("AgentEvent", {
 });
 export type AgentEvent = __Infer<typeof AgentEvent>;
 
+export const AgentJob = __t.object("AgentJob", {
+  jobId: __t.u32(),
+  scenarioId: __t.u32(),
+  day: __t.u32(),
+  date: __t.string(),
+  weekday: __t.string(),
+  status: __t.string(),
+  message: __t.string(),
+  agentsTotal: __t.u32(),
+  agentsDone: __t.u32(),
+  createdAt: __t.timestamp(),
+  updatedAt: __t.timestamp(),
+});
+export type AgentJob = __Infer<typeof AgentJob>;
+
+export const AgentPlan = __t.object("AgentPlan", {
+  planId: __t.u32(),
+  jobId: __t.u32(),
+  agentId: __t.u32(),
+  visitsJson: __t.string(),
+  queriesJson: __t.string(),
+  createdAt: __t.timestamp(),
+});
+export type AgentPlan = __Infer<typeof AgentPlan>;
+
 export const AgentState = __t.object("AgentState", {
   agentId: __t.u32(),
   placeId: __t.string(),
@@ -233,6 +258,20 @@ export const Simulation = __t.object("Simulation", {
   atmosphereQuality: __t.f64(),
 });
 export type Simulation = __Infer<typeof Simulation>;
+
+export const UniverseMenu = __t.object("UniverseMenu", {
+  rowId: __t.u32(),
+  scenarioId: __t.u32(),
+  placeId: __t.string(),
+  storeName: __t.string(),
+  name: __t.string(),
+  section: __t.string(),
+  priceCents: __t.u32(),
+  previousPriceCents: __t.u32(),
+  change: __t.string(),
+  costCents: __t.u32(),
+});
+export type UniverseMenu = __Infer<typeof UniverseMenu>;
 
 export const User = __t.object("User", {
   identity: __t.identity(),

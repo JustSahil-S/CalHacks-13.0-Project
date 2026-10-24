@@ -35,9 +35,11 @@ import {
 
 // Import all reducer arg schemas
 import AddItemReducer from "./add_item_reducer";
+import ClaimAgentJobReducer from "./claim_agent_job_reducer";
 import ClearStoreDataReducer from "./clear_store_data_reducer";
 import CreateScenarioReducer from "./create_scenario_reducer";
 import DeleteScenarioReducer from "./delete_scenario_reducer";
+import FinishAgentJobReducer from "./finish_agent_job_reducer";
 import RemoveItemReducer from "./remove_item_reducer";
 import RenameScenarioReducer from "./rename_scenario_reducer";
 import ResetSimulationReducer from "./reset_simulation_reducer";
@@ -47,6 +49,8 @@ import SendMessageReducer from "./send_message_reducer";
 import SetCompetitorsReducer from "./set_competitors_reducer";
 import SetItemPriceReducer from "./set_item_price_reducer";
 import SetNameReducer from "./set_name_reducer";
+import StartAgentDayReducer from "./start_agent_day_reducer";
+import SubmitAgentPlanReducer from "./submit_agent_plan_reducer";
 import UpdateAddedItemReducer from "./update_added_item_reducer";
 import UpdateSimulationSettingsReducer from "./update_simulation_settings_reducer";
 import UpsertBusinessReducer from "./upsert_business_reducer";
@@ -62,6 +66,8 @@ import * as SimulateDaysProcedure from "./simulate_days_procedure";
 
 // Import all table schema definitions
 import AgentEventRow from "./agent_event_table";
+import AgentJobRow from "./agent_job_table";
+import AgentPlanRow from "./agent_plan_table";
 import AgentStateRow from "./agent_state_table";
 import BusinessRow from "./business_table";
 import CompetitorRow from "./competitor_table";
@@ -77,6 +83,7 @@ import SimDayRow from "./sim_day_table";
 import SimStoreDayRow from "./sim_store_day_table";
 import SimVisitRow from "./sim_visit_table";
 import SimulationRow from "./simulation_table";
+import UniverseMenuRow from "./universe_menu_table";
 import UserRow from "./user_table";
 
 /** Type-only namespace exports for generated type groups. */
@@ -100,6 +107,31 @@ const tablesSchema = __schema({
       { name: 'agent_event_event_id_key', constraint: 'unique', columns: ['eventId'] },
     ],
   }, AgentEventRow),
+  agentJob: __table({
+    name: 'agent_job',
+    indexes: [
+      { accessor: 'job_id', name: 'agent_job_job_id_idx_btree', algorithm: 'btree', columns: [
+        'jobId',
+      ] },
+    ],
+    constraints: [
+      { name: 'agent_job_job_id_key', constraint: 'unique', columns: ['jobId'] },
+    ],
+  }, AgentJobRow),
+  agentPlan: __table({
+    name: 'agent_plan',
+    indexes: [
+      { accessor: 'job_id', name: 'agent_plan_job_id_idx_btree', algorithm: 'btree', columns: [
+        'jobId',
+      ] },
+      { accessor: 'plan_id', name: 'agent_plan_plan_id_idx_btree', algorithm: 'btree', columns: [
+        'planId',
+      ] },
+    ],
+    constraints: [
+      { name: 'agent_plan_plan_id_key', constraint: 'unique', columns: ['planId'] },
+    ],
+  }, AgentPlanRow),
   agentState: __table({
     name: 'agent_state',
     indexes: [
@@ -297,6 +329,20 @@ const tablesSchema = __schema({
       { name: 'simulation_place_id_key', constraint: 'unique', columns: ['placeId'] },
     ],
   }, SimulationRow),
+  universeMenu: __table({
+    name: 'universe_menu',
+    indexes: [
+      { accessor: 'row_id', name: 'universe_menu_row_id_idx_btree', algorithm: 'btree', columns: [
+        'rowId',
+      ] },
+      { accessor: 'scenario_id', name: 'universe_menu_scenario_id_idx_btree', algorithm: 'btree', columns: [
+        'scenarioId',
+      ] },
+    ],
+    constraints: [
+      { name: 'universe_menu_row_id_key', constraint: 'unique', columns: ['rowId'] },
+    ],
+  }, UniverseMenuRow),
   user: __table({
     name: 'user',
     indexes: [
@@ -313,9 +359,11 @@ const tablesSchema = __schema({
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
   __reducerSchema("add_item", AddItemReducer),
+  __reducerSchema("claim_agent_job", ClaimAgentJobReducer),
   __reducerSchema("clear_store_data", ClearStoreDataReducer),
   __reducerSchema("create_scenario", CreateScenarioReducer),
   __reducerSchema("delete_scenario", DeleteScenarioReducer),
+  __reducerSchema("finish_agent_job", FinishAgentJobReducer),
   __reducerSchema("remove_item", RemoveItemReducer),
   __reducerSchema("rename_scenario", RenameScenarioReducer),
   __reducerSchema("reset_simulation", ResetSimulationReducer),
@@ -325,6 +373,8 @@ const reducersSchema = __reducers(
   __reducerSchema("set_competitors", SetCompetitorsReducer),
   __reducerSchema("set_item_price", SetItemPriceReducer),
   __reducerSchema("set_name", SetNameReducer),
+  __reducerSchema("start_agent_day", StartAgentDayReducer),
+  __reducerSchema("submit_agent_plan", SubmitAgentPlanReducer),
   __reducerSchema("update_added_item", UpdateAddedItemReducer),
   __reducerSchema("update_simulation_settings", UpdateSimulationSettingsReducer),
   __reducerSchema("upsert_business", UpsertBusinessReducer),
@@ -345,6 +395,10 @@ type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "ta
   tables: typeof tablesSchema.schemaType.tables & {
     /** @deprecated Use `agentEvent` instead. This alias will be removed in the next major version. */
     readonly "agent_event": Omit<typeof tablesSchema.schemaType.tables["agentEvent"], "accessorName"> & { readonly accessorName: "agent_event" };
+    /** @deprecated Use `agentJob` instead. This alias will be removed in the next major version. */
+    readonly "agent_job": Omit<typeof tablesSchema.schemaType.tables["agentJob"], "accessorName"> & { readonly accessorName: "agent_job" };
+    /** @deprecated Use `agentPlan` instead. This alias will be removed in the next major version. */
+    readonly "agent_plan": Omit<typeof tablesSchema.schemaType.tables["agentPlan"], "accessorName"> & { readonly accessorName: "agent_plan" };
     /** @deprecated Use `agentState` instead. This alias will be removed in the next major version. */
     readonly "agent_state": Omit<typeof tablesSchema.schemaType.tables["agentState"], "accessorName"> & { readonly accessorName: "agent_state" };
     /** @deprecated Use `customerAgent` instead. This alias will be removed in the next major version. */
@@ -363,6 +417,8 @@ type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "ta
     readonly "sim_store_day": Omit<typeof tablesSchema.schemaType.tables["simStoreDay"], "accessorName"> & { readonly accessorName: "sim_store_day" };
     /** @deprecated Use `simVisit` instead. This alias will be removed in the next major version. */
     readonly "sim_visit": Omit<typeof tablesSchema.schemaType.tables["simVisit"], "accessorName"> & { readonly accessorName: "sim_visit" };
+    /** @deprecated Use `universeMenu` instead. This alias will be removed in the next major version. */
+    readonly "universe_menu": Omit<typeof tablesSchema.schemaType.tables["universeMenu"], "accessorName"> & { readonly accessorName: "universe_menu" };
   };
 };
 
@@ -382,6 +438,8 @@ const REMOTE_MODULE = {
 
 const tableAccessorAliases = {
   "agent_event": "agentEvent",
+  "agent_job": "agentJob",
+  "agent_plan": "agentPlan",
   "agent_state": "agentState",
   "customer_agent": "customerAgent",
   "menu_item": "menuItem",
@@ -391,6 +449,7 @@ const tableAccessorAliases = {
   "sim_day": "simDay",
   "sim_store_day": "simStoreDay",
   "sim_visit": "simVisit",
+  "universe_menu": "universeMenu",
 } as const;
 
 function __withTableAccessorAliases<T extends object>(target: T, freeze = false): T {
@@ -413,6 +472,10 @@ type __DbViewBase = __DbConnectionImpl<typeof REMOTE_MODULE>["db"];
 export type DbView = __DbViewBase & {
   /** @deprecated Use `agentEvent` instead. This alias will be removed in the next major version. */
   readonly "agent_event": __DbViewBase["agentEvent"];
+  /** @deprecated Use `agentJob` instead. This alias will be removed in the next major version. */
+  readonly "agent_job": __DbViewBase["agentJob"];
+  /** @deprecated Use `agentPlan` instead. This alias will be removed in the next major version. */
+  readonly "agent_plan": __DbViewBase["agentPlan"];
   /** @deprecated Use `agentState` instead. This alias will be removed in the next major version. */
   readonly "agent_state": __DbViewBase["agentState"];
   /** @deprecated Use `customerAgent` instead. This alias will be removed in the next major version. */
@@ -431,12 +494,18 @@ export type DbView = __DbViewBase & {
   readonly "sim_store_day": __DbViewBase["simStoreDay"];
   /** @deprecated Use `simVisit` instead. This alias will be removed in the next major version. */
   readonly "sim_visit": __DbViewBase["simVisit"];
+  /** @deprecated Use `universeMenu` instead. This alias will be removed in the next major version. */
+  readonly "universe_menu": __DbViewBase["universeMenu"];
 };
 
 type __TablesBase = __QueryBuilder<typeof tablesSchema.schemaType>;
 export type Tables = __TablesBase & {
   /** @deprecated Use `agentEvent` instead. This alias will be removed in the next major version. */
   readonly "agent_event": __TablesBase["agentEvent"];
+  /** @deprecated Use `agentJob` instead. This alias will be removed in the next major version. */
+  readonly "agent_job": __TablesBase["agentJob"];
+  /** @deprecated Use `agentPlan` instead. This alias will be removed in the next major version. */
+  readonly "agent_plan": __TablesBase["agentPlan"];
   /** @deprecated Use `agentState` instead. This alias will be removed in the next major version. */
   readonly "agent_state": __TablesBase["agentState"];
   /** @deprecated Use `customerAgent` instead. This alias will be removed in the next major version. */
@@ -455,6 +524,8 @@ export type Tables = __TablesBase & {
   readonly "sim_store_day": __TablesBase["simStoreDay"];
   /** @deprecated Use `simVisit` instead. This alias will be removed in the next major version. */
   readonly "sim_visit": __TablesBase["simVisit"];
+  /** @deprecated Use `universeMenu` instead. This alias will be removed in the next major version. */
+  readonly "universe_menu": __TablesBase["universeMenu"];
 };
 
 /** The tables available in this remote SpacetimeDB module. Each table reference doubles as a query builder. */

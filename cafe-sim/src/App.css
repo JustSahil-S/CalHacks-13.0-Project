@@ -569,6 +569,14 @@ tr.selected td {
   opacity: 0.85;
 }
 
+.query-list {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem;
+  opacity: 0.75;
+}
+
 .visit-head {
   display: flex;
   flex-wrap: wrap;

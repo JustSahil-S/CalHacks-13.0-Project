@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { procedures, reducers, tables } from './module_bindings';
-import { useProcedure, useReducer, useTable } from 'spacetimedb/react';
-import type { Business, CustomerAgent, SimStoreDay, SimVisit } from './module_bindings/types';
+import { reducers, tables } from './module_bindings';
+import { useReducer, useTable } from 'spacetimedb/react';
+import type { AgentPlan, Business, CustomerAgent, SimStoreDay, SimVisit } from './module_bindings/types';
 
 const MAX_DAYS_PER_RUN = 7;
 
@@ -63,12 +63,20 @@ export default function Timeline({
   jobMessage: string;
   onError: (error: unknown) => void;
 }) {
-  const simulateDays = useProcedure(procedures.simulateDays);
+  const startAgentDay = useReducer(reducers.startAgentDay);
   const resetTimeline = useReducer(reducers.resetTimeline);
   const [days] = useTable(tables.sim_day);
   const [storeDays] = useTable(tables.sim_store_day);
   const [visits] = useTable(tables.sim_visit);
+  const [agentJobs] = useTable(tables.agent_job);
+  const [agentPlans] = useTable(tables.agent_plan);
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
+  const agentBusy = agentJobs.some(job => job.status === 'queued' || job.status === 'running');
+  const latestJob = [...agentJobs].sort((a, b) =>
+    Number(b.updatedAt.microsSinceUnixEpoch - a.updatedAt.microsSinceUnixEpoch),
+  )[0];
+  const busy = running || agentBusy;
+  const status = agentBusy ? latestJob?.message || 'Agents are deciding...' : jobMessage;
 
   const comparing = scenarioId !== 0;
   const baseDays = new Map(days.filter(d => d.scenarioId === 0).map(d => [d.day, d]));
@@ -91,7 +99,7 @@ export default function Timeline({
   const baseProfit = sum('base');
   const scenarioProfit = sum('scenario');
 
-  const onSimulate = (count: number) => simulateDays({ scenarioId, days: count }).catch(onError);
+  const onSimulate = (count: number) => startAgentDay({ scenarioId, days: count }).catch(onError);
   const onRestart = () => {
     const what = comparing
       ? `Clear the simulated days of "${scenarioName}"?`
@@ -109,31 +117,32 @@ export default function Timeline({
         <h3>Timeline</h3>
         <span className="muted">
           {comparing
-            ? `Each day, every customer agent picks where to go with the real menus, then the ones your menu changes would affect change their plans.`
-            : 'Each day, every customer agent picks where to go and what to order from the real menus.'}
+            ? `Each agent looks up menus in the live database, then the ones your edits would change update their plans.`
+            : 'Each agent looks up nearby stores and menus in the live database, then decides where to go.'}
         </span>
         <div className="timeline-actions">
-          <button type="button" onClick={() => onSimulate(1)} disabled={running || agents.length === 0}>
-            {running ? 'Simulating...' : `Simulate day ${lastDay + 1}`}
+          <button type="button" onClick={() => onSimulate(1)} disabled={busy || agents.length === 0}>
+            {busy ? 'Simulating...' : `Simulate day ${lastDay + 1}`}
           </button>
           <button
             type="button"
             className="secondary"
             onClick={() => onSimulate(MAX_DAYS_PER_RUN)}
-            disabled={running || agents.length === 0}
+            disabled={busy || agents.length === 0}
           >
             Simulate {MAX_DAYS_PER_RUN} days
           </button>
-          <button type="button" className="danger" onClick={onRestart} disabled={running || ownDays.length === 0}>
+          <button type="button" className="danger" onClick={onRestart} disabled={busy || ownDays.length === 0}>
             Restart
           </button>
         </div>
       </div>
 
-      {running && jobMessage && (
+      {busy && status && (
         <p className="timeline-status">
           <span className="spinner" />
-          {jobMessage}
+          {status}
+          {latestJob && agentBusy && ` (${latestJob.agentsDone}/${latestJob.agentsTotal})`}
         </p>
       )}
 
@@ -191,6 +200,11 @@ export default function Timeline({
               stores={stores}
               storesById={storesById}
               agentsById={agentsById}
+              plans={agentPlans.filter(
+                plan =>
+                  plan.jobId ===
+                  agentJobs.find(job => job.scenarioId === scenarioId && job.day === selected.day.day)?.jobId,
+              )}
               base={{
                 totals: selected.base,
                 rows: rowsFor(baseDays.get(selected.day.day)?.dayId),
@@ -218,6 +232,7 @@ function DayDetail({
   stores,
   storesById,
   agentsById,
+  plans,
   base,
   scenario,
 }: {
@@ -227,6 +242,7 @@ function DayDetail({
   stores: Business[];
   storesById: Map<string, Business>;
   agentsById: Map<number, CustomerAgent>;
+  plans: AgentPlan[];
   base: Universe;
   scenario: Universe;
 }) {
@@ -257,6 +273,15 @@ function DayDetail({
   const changedAgents = new Set(
     comparing ? [...agentsById.keys()].filter(id => planKey(plansOf(base, id)) !== planKey(plansOf(scenario, id))) : [],
   );
+  const queriesOf = (agentId: number) => {
+    const raw = plans.find(plan => plan.agentId === agentId)?.queriesJson;
+    if (!raw) return [];
+    try {
+      return (JSON.parse(raw) as { sql?: string; rows?: number; error?: string }[]).filter(q => q.sql || q.error);
+    } catch {
+      return [];
+    }
+  };
 
   return (
     <div className="day-detail">
@@ -364,6 +389,17 @@ function DayDetail({
                       </span>
                     </div>
                     <PlanLines visits={plansOf(shown, agent.agentId)} storesById={storesById} />
+                    {queriesOf(agent.agentId).length > 0 && (
+                      <ul className="query-list">
+                        {queriesOf(agent.agentId).map((query, i) => (
+                          <li key={i}>
+                            {query.error
+                              ? `SQL failed: ${query.error}`
+                              : `${query.sql} → ${query.rows ?? 0} row${query.rows === 1 ? '' : 's'}`}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                     {changed && (
                       <div className="base-plan">
                         <span className="muted">In the base universe:</span>

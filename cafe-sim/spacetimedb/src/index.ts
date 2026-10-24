@@ -299,6 +299,58 @@ const sim_visit = table(
   }
 );
 
+// A day for the agent worker (agents/worker.ts) to simulate in one universe
+const agent_job = table(
+  { name: 'agent_job', public: true },
+  {
+    job_id: t.u32().primaryKey().autoInc(),
+    scenario_id: t.u32(),
+    day: t.u32(),
+    date: t.string(),
+    weekday: t.string(),
+    // queued | running | done | error
+    status: t.string(),
+    message: t.string(),
+    agents_total: t.u32(),
+    agents_done: t.u32(),
+    created_at: t.timestamp(),
+    updated_at: t.timestamp(),
+  }
+);
+
+// Every store's menu as it is in one universe, for agents to query over MCP. Rebuilt when an agent day starts.
+const universe_menu = table(
+  { name: 'universe_menu', public: true },
+  {
+    row_id: t.u32().primaryKey().autoInc(),
+    scenario_id: t.u32().index(),
+    place_id: t.string(),
+    store_name: t.string(),
+    name: t.string(),
+    section: t.string(),
+    price_cents: t.u32(),
+    // The real price when the scenario changed it, otherwise 0
+    previous_price_cents: t.u32(),
+    // '' | price | new | removed
+    change: t.string(),
+    cost_cents: t.u32(),
+  }
+);
+
+// One agent's plan for an agent job, and the SQL it ran to make it
+const agent_plan = table(
+  { name: 'agent_plan', public: true },
+  {
+    plan_id: t.u32().primaryKey().autoInc(),
+    job_id: t.u32().index(),
+    agent_id: t.u32(),
+    // [{ place_id, chance, items: [item names], reason }]
+    visits_json: t.string(),
+    queries_json: t.string(),
+    created_at: t.timestamp(),
+  }
+);
+
 const spacetimedb = schema(
   {
     scenario,
@@ -306,6 +358,9 @@ const spacetimedb = schema(
     sim_day,
     sim_store_day,
     sim_visit,
+    agent_job,
+    universe_menu,
+    agent_plan,
     user,
     message,
     business,
@@ -526,6 +581,9 @@ function setJob(ctx: ProcedureCtx<Db>, fields: Partial<Omit<NonNullable<ReturnTy
 }
 
 function clearTimeline(tx: Tx) {
+  tx.db.agent_plan.clear();
+  tx.db.agent_job.clear();
+  tx.db.universe_menu.clear();
   tx.db.sim_visit.clear();
   tx.db.sim_store_day.clear();
   tx.db.sim_day.clear();
@@ -2528,13 +2586,19 @@ function jobRunning(tx: Tx) {
 }
 
 function deleteUniverseDays(tx: Tx, scenario_id: number) {
+  for (const job of [...tx.db.agent_job.iter()].filter(j => j.scenario_id === scenario_id)) {
+    tx.db.agent_plan.job_id.delete(job.job_id);
+    tx.db.agent_job.job_id.delete(job.job_id);
+  }
+  tx.db.universe_menu.scenario_id.delete(scenario_id);
   tx.db.sim_visit.scenario_id.delete(scenario_id);
   tx.db.sim_store_day.scenario_id.delete(scenario_id);
   tx.db.sim_day.scenario_id.delete(scenario_id);
 }
 
 // Everything needed to simulate the next day of `scenario_id`, plus the base universe when it hasn't reached that day yet
-function loadMarket(tx: Tx, scenario_id: number): MarketDay {
+// The selected store first, then its competitors from nearest to farthest, and every store's agents
+function marketPlaces(tx: Tx) {
   const storeId = tx.db.populate_job.job_id.find(JOB_ID)?.place_id ?? '';
   const home = tx.db.business.place_id.find(storeId);
   if (!home) throw new SenderError('Populate a store first');
@@ -2547,6 +2611,11 @@ function loadMarket(tx: Tx, scenario_id: number): MarketDay {
   ];
   const agents = places.flatMap(p => [...tx.db.customer_agent.place_id.filter(p.place_id)]);
   if (agents.length === 0) throw new SenderError('Create customer agents first');
+  return { places, agents };
+}
+
+function loadMarket(tx: Tx, scenario_id: number): MarketDay {
+  const { places, agents } = marketPlaces(tx);
 
   const daysOf = (id: number) => [...tx.db.sim_day.scenario_id.filter(id)];
   const day = Math.max(0, ...daysOf(scenario_id).map(d => d.day)) + 1;
@@ -2725,38 +2794,54 @@ function mergePlans(baseline: Plan[], changed: unknown): Plan[] {
 }
 
 function saveMarketDay(tx: Tx, market: MarketDay, universe: Universe, reply: any) {
-  const { scenario_id } = universe;
-  if ([...tx.db.sim_day.scenario_id.filter(scenario_id)].some(d => d.day === market.day)) return;
-  const { day_id } = tx.db.sim_day.insert({
-    day_id: 0,
-    scenario_id,
-    day: market.day,
-    date: market.date,
-    weekday: market.weekday,
-    created_at: tx.timestamp,
-  });
-
-  const totals = new Map(universe.stores.map(s => [s.place.place_id, { customers: 0, revenue: 0, cost: 0 }]));
   const storesByCode = new Map(universe.stores.map(s => [s.code, s]));
+  const plans: DayPlan[] = [];
   const seen = new Set<number>();
   for (const entry of Array.isArray(reply?.customers) ? reply.customers : []) {
     const agent = market.agents[Number(String(entry.customer).replace(/\D/g, '')) - 1];
     if (!agent || seen.has(agent.agent_id)) continue;
     seen.add(agent.agent_id);
-    const visits = (Array.isArray(entry.visits) ? entry.visits : [])
-      .slice(0, MAX_VISITS_PER_AGENT)
-      .map((visit: any) => {
-        const store = storesByCode.get(String(visit.store).trim());
-        if (!store) return null;
-        const items = (Array.isArray(visit.items) ? visit.items : [])
-          .map((code: unknown) => store.itemsByCode.get(String(code).trim()))
-          .filter((item: SimItem | undefined): item is SimItem => !!item)
-          .slice(0, MAX_ITEMS_PER_VISIT);
-        if (items.length === 0) return null;
-        return { store, items, chance: clamp(visit.chance, 0, 1, 0), reason: String(visit.reason ?? '') };
-      })
-      .filter(Boolean) as { store: SimStore; items: SimItem[]; chance: number; reason: string }[];
+    const visits = (Array.isArray(entry.visits) ? entry.visits : []).map((visit: any): DayVisit | null => {
+      const store = storesByCode.get(String(visit.store).trim());
+      if (!store) return null;
+      const items = (Array.isArray(visit.items) ? visit.items : [])
+        .map((code: unknown) => store.itemsByCode.get(String(code).trim()))
+        .filter((item: SimItem | undefined): item is SimItem => !!item);
+      return { place_id: store.place.place_id, items, chance: clamp(visit.chance, 0, 1, 0), reason: String(visit.reason ?? '') };
+    });
+    plans.push({ agent, visits: visits.filter((v: DayVisit | null): v is DayVisit => !!v) });
+  }
+  writeDay(tx, universe.scenario_id, market, universe.stores.map(s => s.place.place_id), plans);
+}
 
+type DayVisit = { place_id: string; items: { name: string; price_cents: number; cost_cents: number }[]; chance: number; reason: string };
+type DayPlan = { agent: Agent; visits: DayVisit[] };
+
+// Saves one universe's day: each agent's visits, scaled to real customers, and every store's totals
+function writeDay(
+  tx: Tx,
+  scenario_id: number,
+  when: { day: number; date: string; weekday: string },
+  place_ids: string[],
+  plans: DayPlan[]
+) {
+  if ([...tx.db.sim_day.scenario_id.filter(scenario_id)].some(d => d.day === when.day)) return;
+  const { day_id } = tx.db.sim_day.insert({
+    day_id: 0,
+    scenario_id,
+    day: when.day,
+    date: when.date,
+    weekday: when.weekday,
+    created_at: tx.timestamp,
+  });
+
+  const totals = new Map(place_ids.map(id => [id, { customers: 0, revenue: 0, cost: 0 }]));
+  for (const { agent, visits: allVisits } of plans) {
+    const visits = allVisits
+      .filter(v => totals.has(v.place_id))
+      .map(v => ({ ...v, items: v.items.slice(0, MAX_ITEMS_PER_VISIT) }))
+      .filter(v => v.items.length > 0)
+      .slice(0, MAX_VISITS_PER_AGENT);
     const totalChance = visits.reduce((sum, v) => sum + v.chance, 0);
     const scale = totalChance > 1 ? 1 / totalChance : 1;
     const group = agent.represents_customers * DAILY_CUSTOMERS_PER_REVIEWER;
@@ -2771,7 +2856,7 @@ function saveMarketDay(tx: Tx, market: MarketDay, universe: Universe, reply: any
         day_id,
         scenario_id,
         agent_id: agent.agent_id,
-        place_id: visit.store.place.place_id,
+        place_id: visit.place_id,
         chance,
         customers,
         items_json: JSON.stringify(visit.items.map(i => i.name)),
@@ -2779,7 +2864,7 @@ function saveMarketDay(tx: Tx, market: MarketDay, universe: Universe, reply: any
         cost_cents: cost,
         reason: visit.reason,
       });
-      const total = totals.get(visit.store.place.place_id)!;
+      const total = totals.get(visit.place_id)!;
       total.customers += customers;
       total.revenue += customers * spend;
       total.cost += customers * cost;
@@ -2810,7 +2895,7 @@ export const simulate_days = spacetimedb.procedure(
     }
     const running = ctx.withTx(tx => {
       if (scenario_id !== 0) requireScenario(tx, scenario_id);
-      return jobRunning(tx);
+      return jobRunning(tx) || !!activeAgentJob(tx);
     });
     if (running) throw new SenderError('Wait for the current run to finish');
 
@@ -2860,6 +2945,198 @@ export const reset_timeline = spacetimedb.reducer({ scenario_id: t.u32() }, (ctx
   if (jobRunning(ctx)) throw new SenderError('Wait for the current run to finish');
   if (scenario_id === 0) clearTimeline(ctx);
   else deleteUniverseDays(ctx, scenario_id);
+});
+
+// ── Agent mode ───────────────────────────────────────────────────────────────
+// Each agent is its own Claude conversation that looks things up in this database through SpacetimeDB's MCP
+// endpoint. Procedures make HTTP calls one at a time, so the agents run in parallel in the agent worker
+// (agents/worker.ts): it claims a queued job, submits each agent's plan, then finishes the job, which saves the day.
+const MAX_PLAN_JSON_CHARS = 4_000;
+const MAX_QUERIES_JSON_CHARS = 12_000;
+
+function activeAgentJob(tx: Tx) {
+  return [...tx.db.agent_job.iter()].find(
+    j =>
+      (j.status === 'queued' || j.status === 'running') &&
+      tx.timestamp.microsSinceUnixEpoch - j.updated_at.microsSinceUnixEpoch < STALE_JOB_MICROS
+  );
+}
+
+function buildUniverseMenu(tx: Tx, scenario_id: number, places: Business[]) {
+  tx.db.universe_menu.scenario_id.delete(scenario_id);
+  const edits =
+    scenario_id === 0 ? [] : [...tx.db.scenario_edit.scenario_id.filter(scenario_id)].sort((a, b) => a.edit_id - b.edit_id);
+  places.forEach((place, index) => {
+    const items = [...tx.db.menu_item.place_id.filter(place.place_id)];
+    const real = simMenu('s', items, []);
+    const menu = index === 0 ? simMenu('s', items, edits) : real;
+    const realCodes = new Set(real.map(i => i.code));
+    const row = (item: SimItem, change: string, price_cents: number) =>
+      tx.db.universe_menu.insert({
+        row_id: 0,
+        scenario_id,
+        place_id: place.place_id,
+        store_name: place.name,
+        name: item.name,
+        section: item.section,
+        price_cents,
+        previous_price_cents: item.real_price_cents ?? 0,
+        change,
+        cost_cents: item.cost_cents,
+      });
+    for (const item of menu) {
+      row(item, item.real_price_cents !== null ? 'price' : realCodes.has(item.code) ? '' : 'new', item.price_cents);
+    }
+    const kept = new Set(menu.map(i => i.code));
+    for (const item of real) if (!kept.has(item.code)) row(item, 'removed', item.price_cents);
+  });
+}
+
+function requireAgentJob(tx: Tx, job_id: number, status: string) {
+  const job = tx.db.agent_job.job_id.find(job_id);
+  if (!job) throw new SenderError(`No agent job ${job_id}`);
+  if (job.status !== status) throw new SenderError(`Agent job ${job_id} is ${job.status}, not ${status}`);
+  return job;
+}
+
+// Queues the next `days` of `scenario_id` for the agent worker. A scenario always gets the matching base-universe
+// days first, so the worker can compare them. Jobs are processed in insert order, one universe-day at a time.
+export const start_agent_day = spacetimedb.reducer({ scenario_id: t.u32(), days: t.u32() }, (ctx, { scenario_id, days }) => {
+  if (days < 1 || days > MAX_DAYS_PER_RUN) {
+    throw new SenderError(`Simulate between 1 and ${MAX_DAYS_PER_RUN} days at a time`);
+  }
+  if (scenario_id !== 0) requireScenario(ctx, scenario_id);
+  if (jobRunning(ctx) || activeAgentJob(ctx)) throw new SenderError('Wait for the current run to finish');
+  for (const stale of [...ctx.db.agent_job.iter()].filter(j => j.status === 'queued' || j.status === 'running')) {
+    ctx.db.agent_job.job_id.update({
+      ...stale,
+      status: 'error',
+      message: 'The agent worker stopped responding',
+      updated_at: ctx.timestamp,
+    });
+  }
+
+  const { places, agents } = marketPlaces(ctx);
+  const daysOf = (id: number) => [...ctx.db.sim_day.scenario_id.filter(id)];
+  const next = Math.max(0, ...daysOf(scenario_id).map(d => d.day)) + 1;
+  const firstDay = daysOf(0).find(d => d.day === 1);
+  const startMillis = firstDay
+    ? Date.parse(`${firstDay.date}T12:00:00Z`)
+    : Number(ctx.timestamp.microsSinceUnixEpoch / 1000n);
+  const queued = [...ctx.db.agent_job.iter()].filter(j => j.status === 'queued' || j.status === 'running' || j.status === 'done');
+  const already = (id: number, day: number) =>
+    daysOf(id).some(d => d.day === day) || queued.some(j => j.scenario_id === id && j.day === day);
+
+  const universeIds = scenario_id === 0 ? [0] : [0, scenario_id];
+  for (const id of universeIds) buildUniverseMenu(ctx, id, places);
+
+  for (let day = next; day < next + days; day++) {
+    const date = new Date(startMillis + (day - 1) * DAY_MILLIS);
+    for (const id of universeIds) {
+      if (already(id, day)) continue;
+      ctx.db.agent_job.insert({
+        job_id: 0,
+        scenario_id: id,
+        day,
+        date: date.toISOString().slice(0, 10),
+        weekday: WEEKDAYS[date.getUTCDay()],
+        status: 'queued',
+        message: 'Waiting for the agent worker',
+        agents_total: agents.length,
+        agents_done: 0,
+        created_at: ctx.timestamp,
+        updated_at: ctx.timestamp,
+      });
+    }
+  }
+});
+
+export const claim_agent_job = spacetimedb.reducer({ job_id: t.u32() }, (ctx, { job_id }) => {
+  const job = requireAgentJob(ctx, job_id, 'queued');
+  if ([...ctx.db.agent_job.iter()].some(j => j.job_id < job_id && (j.status === 'queued' || j.status === 'running'))) {
+    throw new SenderError('An earlier agent job has to finish first');
+  }
+  ctx.db.agent_job.job_id.update({ ...job, status: 'running', message: 'Agents are deciding...', updated_at: ctx.timestamp });
+});
+
+export const submit_agent_plan = spacetimedb.reducer(
+  { job_id: t.u32(), agent_id: t.u32(), visits_json: t.string(), queries_json: t.string() },
+  (ctx, { job_id, agent_id, visits_json, queries_json }) => {
+    const job = requireAgentJob(ctx, job_id, 'running');
+    if (!ctx.db.customer_agent.agent_id.find(agent_id)) throw new SenderError(`No agent ${agent_id}`);
+    if (visits_json.length > MAX_PLAN_JSON_CHARS || queries_json.length > MAX_QUERIES_JSON_CHARS) {
+      throw new SenderError('Agent plan is too long');
+    }
+    if (!Array.isArray(JSON.parse(visits_json)) || !Array.isArray(JSON.parse(queries_json))) {
+      throw new SenderError('Agent plans must be JSON arrays');
+    }
+    const plans = [...ctx.db.agent_plan.job_id.filter(job_id)];
+    for (const plan of plans) if (plan.agent_id === agent_id) ctx.db.agent_plan.plan_id.delete(plan.plan_id);
+    ctx.db.agent_plan.insert({ plan_id: 0, job_id, agent_id, visits_json, queries_json, created_at: ctx.timestamp });
+    const done = new Set([...plans.map(p => p.agent_id), agent_id]).size;
+    ctx.db.agent_job.job_id.update({
+      ...job,
+      agents_done: done,
+      message: `${done} of ${job.agents_total} agents decided`,
+      updated_at: ctx.timestamp,
+    });
+  }
+);
+
+// Saves the job's day from the submitted plans. In a scenario, agents without a plan keep their base-universe plan.
+export const finish_agent_job = spacetimedb.reducer({ job_id: t.u32(), error: t.string() }, (ctx, { job_id, error }) => {
+  const job = requireAgentJob(ctx, job_id, 'running');
+  if (error) {
+    ctx.db.agent_job.job_id.update({ ...job, status: 'error', message: error.slice(0, 500), updated_at: ctx.timestamp });
+    for (const later of [...ctx.db.agent_job.iter()].filter(j => j.job_id > job_id && j.status === 'queued')) {
+      ctx.db.agent_job.job_id.update({ ...later, status: 'error', message: 'Skipped because an earlier job failed', updated_at: ctx.timestamp });
+    }
+    return;
+  }
+
+  const { places, agents } = marketPlaces(ctx);
+  const menus = new Map<string, Map<string, { name: string; price_cents: number; cost_cents: number }>>();
+  for (const row of ctx.db.universe_menu.scenario_id.filter(job.scenario_id)) {
+    if (row.change === 'removed') continue;
+    const menu = menus.get(row.place_id) ?? new Map();
+    menu.set(row.name.toLowerCase(), { name: row.name, price_cents: row.price_cents, cost_cents: row.cost_cents });
+    menus.set(row.place_id, menu);
+  }
+  const toVisit = (place_id: string, names: unknown[], chance: unknown, reason: unknown): DayVisit => ({
+    place_id,
+    items: names
+      .map(n => menus.get(place_id)?.get(String(n).trim().toLowerCase()))
+      .filter((i): i is { name: string; price_cents: number; cost_cents: number } => !!i),
+    chance: clamp(chance, 0, 1, 0),
+    reason: String(reason ?? ''),
+  });
+
+  const submitted = new Map([...ctx.db.agent_plan.job_id.filter(job_id)].map(p => [p.agent_id, p]));
+  const basePlans = job.scenario_id === 0 ? new Map<number, SimVisit[]>() : visitsByAgent(ctx, 0, job.day);
+  const plans: DayPlan[] = agents.map(agent => {
+    const plan = submitted.get(agent.agent_id);
+    const visits = plan ? (JSON.parse(plan.visits_json) as any[]) : [];
+    // In a scenario, an empty plan means the agent kept its base-universe plan
+    if (plan && (job.scenario_id === 0 || visits.length > 0)) {
+      return {
+        agent,
+        visits: visits.map(v => toVisit(String(v?.place_id ?? ''), Array.isArray(v?.items) ? v.items : [], v?.chance, v?.reason)),
+      };
+    }
+    return {
+      agent,
+      visits: (basePlans.get(agent.agent_id) ?? []).map(v =>
+        toVisit(v.place_id, JSON.parse(v.items_json), v.chance, v.reason)
+      ),
+    };
+  });
+  writeDay(ctx, job.scenario_id, job, places.map(p => p.place_id), plans);
+  ctx.db.agent_job.job_id.update({
+    ...job,
+    status: 'done',
+    message: `${submitted.size} of ${job.agents_total} agents decided`,
+    updated_at: ctx.timestamp,
+  });
 });
 
 function validateName(name: string) {
