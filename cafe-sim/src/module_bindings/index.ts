@@ -34,11 +34,19 @@ import {
 } from "spacetimedb";
 
 // Import all reducer arg schemas
+import AddItemReducer from "./add_item_reducer";
 import ClearStoreDataReducer from "./clear_store_data_reducer";
+import CreateScenarioReducer from "./create_scenario_reducer";
+import DeleteScenarioReducer from "./delete_scenario_reducer";
+import RemoveItemReducer from "./remove_item_reducer";
+import RenameScenarioReducer from "./rename_scenario_reducer";
 import ResetSimulationReducer from "./reset_simulation_reducer";
+import RevertEditReducer from "./revert_edit_reducer";
 import SendMessageReducer from "./send_message_reducer";
 import SetCompetitorsReducer from "./set_competitors_reducer";
+import SetItemPriceReducer from "./set_item_price_reducer";
 import SetNameReducer from "./set_name_reducer";
+import UpdateAddedItemReducer from "./update_added_item_reducer";
 import UpdateSimulationSettingsReducer from "./update_simulation_settings_reducer";
 import UpsertBusinessReducer from "./upsert_business_reducer";
 import UpsertReviewReducer from "./upsert_review_reducer";
@@ -61,6 +69,8 @@ import MenuSourceRow from "./menu_source_table";
 import MessageRow from "./message_table";
 import PopulateJobRow from "./populate_job_table";
 import ReviewRow from "./review_table";
+import ScenarioRow from "./scenario_table";
+import ScenarioEditRow from "./scenario_edit_table";
 import SimulationRow from "./simulation_table";
 import UserRow from "./user_table";
 
@@ -198,6 +208,31 @@ const tablesSchema = __schema({
       { name: 'review_review_id_key', constraint: 'unique', columns: ['reviewId'] },
     ],
   }, ReviewRow),
+  scenario: __table({
+    name: 'scenario',
+    indexes: [
+      { accessor: 'scenario_id', name: 'scenario_scenario_id_idx_btree', algorithm: 'btree', columns: [
+        'scenarioId',
+      ] },
+    ],
+    constraints: [
+      { name: 'scenario_scenario_id_key', constraint: 'unique', columns: ['scenarioId'] },
+    ],
+  }, ScenarioRow),
+  scenarioEdit: __table({
+    name: 'scenario_edit',
+    indexes: [
+      { accessor: 'edit_id', name: 'scenario_edit_edit_id_idx_btree', algorithm: 'btree', columns: [
+        'editId',
+      ] },
+      { accessor: 'scenario_id', name: 'scenario_edit_scenario_id_idx_btree', algorithm: 'btree', columns: [
+        'scenarioId',
+      ] },
+    ],
+    constraints: [
+      { name: 'scenario_edit_edit_id_key', constraint: 'unique', columns: ['editId'] },
+    ],
+  }, ScenarioEditRow),
   simulation: __table({
     name: 'simulation',
     indexes: [
@@ -224,11 +259,19 @@ const tablesSchema = __schema({
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
+  __reducerSchema("add_item", AddItemReducer),
   __reducerSchema("clear_store_data", ClearStoreDataReducer),
+  __reducerSchema("create_scenario", CreateScenarioReducer),
+  __reducerSchema("delete_scenario", DeleteScenarioReducer),
+  __reducerSchema("remove_item", RemoveItemReducer),
+  __reducerSchema("rename_scenario", RenameScenarioReducer),
   __reducerSchema("reset_simulation", ResetSimulationReducer),
+  __reducerSchema("revert_edit", RevertEditReducer),
   __reducerSchema("send_message", SendMessageReducer),
   __reducerSchema("set_competitors", SetCompetitorsReducer),
+  __reducerSchema("set_item_price", SetItemPriceReducer),
   __reducerSchema("set_name", SetNameReducer),
+  __reducerSchema("update_added_item", UpdateAddedItemReducer),
   __reducerSchema("update_simulation_settings", UpdateSimulationSettingsReducer),
   __reducerSchema("upsert_business", UpsertBusinessReducer),
   __reducerSchema("upsert_review", UpsertReviewReducer),
@@ -257,6 +300,8 @@ type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "ta
     readonly "menu_source": Omit<typeof tablesSchema.schemaType.tables["menuSource"], "accessorName"> & { readonly accessorName: "menu_source" };
     /** @deprecated Use `populateJob` instead. This alias will be removed in the next major version. */
     readonly "populate_job": Omit<typeof tablesSchema.schemaType.tables["populateJob"], "accessorName"> & { readonly accessorName: "populate_job" };
+    /** @deprecated Use `scenarioEdit` instead. This alias will be removed in the next major version. */
+    readonly "scenario_edit": Omit<typeof tablesSchema.schemaType.tables["scenarioEdit"], "accessorName"> & { readonly accessorName: "scenario_edit" };
   };
 };
 
@@ -281,6 +326,7 @@ const tableAccessorAliases = {
   "menu_item": "menuItem",
   "menu_source": "menuSource",
   "populate_job": "populateJob",
+  "scenario_edit": "scenarioEdit",
 } as const;
 
 function __withTableAccessorAliases<T extends object>(target: T, freeze = false): T {
@@ -313,6 +359,8 @@ export type DbView = __DbViewBase & {
   readonly "menu_source": __DbViewBase["menuSource"];
   /** @deprecated Use `populateJob` instead. This alias will be removed in the next major version. */
   readonly "populate_job": __DbViewBase["populateJob"];
+  /** @deprecated Use `scenarioEdit` instead. This alias will be removed in the next major version. */
+  readonly "scenario_edit": __DbViewBase["scenarioEdit"];
 };
 
 type __TablesBase = __QueryBuilder<typeof tablesSchema.schemaType>;
@@ -329,6 +377,8 @@ export type Tables = __TablesBase & {
   readonly "menu_source": __TablesBase["menuSource"];
   /** @deprecated Use `populateJob` instead. This alias will be removed in the next major version. */
   readonly "populate_job": __TablesBase["populateJob"];
+  /** @deprecated Use `scenarioEdit` instead. This alias will be removed in the next major version. */
+  readonly "scenario_edit": __TablesBase["scenarioEdit"];
 };
 
 /** The tables available in this remote SpacetimeDB module. Each table reference doubles as a query builder. */

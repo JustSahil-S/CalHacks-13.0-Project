@@ -1,9 +1,10 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import './App.css';
 import { procedures, reducers, tables } from './module_bindings';
 import { useProcedure, useReducer, useSpacetimeDB, useTable } from 'spacetimedb/react';
 import StoreMap from './StoreMap';
 import MenuSection from './MenuSection';
+import MenuPanel from './MenuPanel';
 
 const MAX_RADIUS_KM = 2;
 const COMPETITOR_LIMIT = 50;
@@ -23,6 +24,17 @@ function App() {
   const clearStoreData = useReducer(reducers.clearStoreData);
   const generateAllAgents = useProcedure(procedures.generateAllAgents);
   const fetchMenus = useProcedure(procedures.fetchMenus);
+  const createScenario = useReducer(reducers.createScenario);
+  const renameScenario = useReducer(reducers.renameScenario);
+  const deleteScenario = useReducer(reducers.deleteScenario);
+
+  const [menuItems] = useTable(tables.menu_item);
+  const [scenarios] = useTable(tables.scenario);
+  const [scenarioEdits] = useTable(tables.scenario_edit);
+  // 0 is the base universe: the real prices
+  const [scenarioId, setScenarioId] = useState(0);
+  const [selectNewScenarioAfter, setSelectNewScenarioAfter] = useState<number | null>(null);
+  const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
 
   const [businesses, businessesReady] = useTable(tables.business);
   const [competitorLinks] = useTable(tables.competitor);
@@ -52,19 +64,53 @@ function App() {
 
   // The selected store's agents are listed first, then stores with the most reviews
   const storeRank = (placeId: string) =>
-    placeId === store?.placeId ? Number.MAX_SAFE_INTEGER : businessesById.get(placeId)?.reviewsCount ?? 0;
+    placeId === store?.placeId ? Number.MAX_SAFE_INTEGER : (businessesById.get(placeId)?.reviewsCount ?? 0);
 
   const onPopulate = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (businesses.length > 0 && !window.confirm('This replaces all current store data. Continue?')) return;
     setRequestError('');
-    populateStore({ mapsUrl: mapsUrl.trim(), radiusKm, maxCompetitors }).catch(error => setRequestError(errorMessage(error)));
+    populateStore({ mapsUrl: mapsUrl.trim(), radiusKm, maxCompetitors }).catch(error =>
+      setRequestError(errorMessage(error)),
+    );
   };
 
   const onCreateAgents = () => {
     if (agents.length > 0 && !window.confirm('This replaces the current agents. Continue?')) return;
     setRequestError('');
     generateAllAgents({ totalAgents }).catch(error => setRequestError(errorMessage(error)));
+  };
+
+  // Reducers don't return ids, so a newly created scenario is selected once it shows up
+  useEffect(() => {
+    if (selectNewScenarioAfter === null) return;
+    const created = scenarios.filter(s => s.scenarioId > selectNewScenarioAfter);
+    if (created.length === 0) return;
+    setScenarioId(Math.max(...created.map(s => s.scenarioId)));
+    setSelectNewScenarioAfter(null);
+  }, [scenarios, selectNewScenarioAfter]);
+
+  useEffect(() => {
+    if (scenarioId !== 0 && !scenarios.some(s => s.scenarioId === scenarioId)) setScenarioId(0);
+  }, [scenarios, scenarioId]);
+
+  const onCreateScenario = () => {
+    setRequestError('');
+    setSelectNewScenarioAfter(Math.max(0, ...scenarios.map(s => s.scenarioId)));
+    createScenario({ name: `Scenario ${scenarios.length + 1}` }).catch(error => setRequestError(errorMessage(error)));
+  };
+
+  const onRenameScenario = () => {
+    const current = scenarios.find(s => s.scenarioId === scenarioId);
+    const name = current && window.prompt('Scenario name', current.name);
+    if (!name) return;
+    renameScenario({ scenarioId, name }).catch(error => setRequestError(errorMessage(error)));
+  };
+
+  const onDeleteScenario = () => {
+    const current = scenarios.find(s => s.scenarioId === scenarioId);
+    if (!current || !window.confirm(`Delete "${current.name}" and all its changes?`)) return;
+    deleteScenario({ scenarioId }).catch(error => setRequestError(errorMessage(error)));
   };
 
   const onFetchMenus = () => {
@@ -129,7 +175,9 @@ function App() {
               max={COMPETITOR_LIMIT}
               step={1}
               value={maxCompetitors}
-              onChange={e => setMaxCompetitors(Math.min(COMPETITOR_LIMIT, Math.max(1, Math.round(Number(e.target.value)) || 1)))}
+              onChange={e =>
+                setMaxCompetitors(Math.min(COMPETITOR_LIMIT, Math.max(1, Math.round(Number(e.target.value)) || 1)))
+              }
               disabled={running}
             />
           </label>
@@ -172,6 +220,33 @@ function App() {
 
       {store && (
         <section className="card map-card">
+          <div className="scenario-bar">
+            <label>
+              Universe{' '}
+              <select value={scenarioId} onChange={e => setScenarioId(Number(e.target.value))}>
+                <option value={0}>Base (real prices)</option>
+                {scenarios.map(s => (
+                  <option key={s.scenarioId} value={s.scenarioId}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button type="button" onClick={onCreateScenario}>
+              New scenario
+            </button>
+            {scenarioId !== 0 && (
+              <>
+                <button type="button" className="secondary" onClick={onRenameScenario}>
+                  Rename
+                </button>
+                <button type="button" className="danger" onClick={onDeleteScenario}>
+                  Delete
+                </button>
+              </>
+            )}
+            <span className="muted">Click a store on the map to see its menu.</span>
+          </div>
           <StoreMap
             store={store}
             competitors={competitors.map(({ link, business }) => ({
@@ -179,6 +254,24 @@ function App() {
               distanceMeters: link.distanceMeters,
             }))}
             radiusKm={job?.radiusKm || radiusKm}
+            selectedId={selectedPlaceId}
+            onSelect={setSelectedPlaceId}
+            overlay={
+              selectedPlaceId &&
+              businessesById.get(selectedPlaceId) && (
+                <MenuPanel
+                  business={businessesById.get(selectedPlaceId)!}
+                  distanceMeters={competitors.find(c => c.business?.placeId === selectedPlaceId)?.link.distanceMeters}
+                  items={menuItems.filter(i => i.placeId === selectedPlaceId)}
+                  edits={scenarioEdits.filter(e => e.scenarioId === scenarioId)}
+                  isOwnStore={selectedPlaceId === store.placeId}
+                  scenarioId={scenarioId}
+                  onCreateScenario={onCreateScenario}
+                  onClose={() => setSelectedPlaceId(null)}
+                  onError={error => setRequestError(errorMessage(error))}
+                />
+              )
+            }
           />
         </section>
       )}
@@ -273,7 +366,7 @@ function App() {
                     (a, b) =>
                       storeRank(b.placeId) - storeRank(a.placeId) ||
                       a.placeId.localeCompare(b.placeId) ||
-                      a.name.localeCompare(b.name)
+                      a.name.localeCompare(b.name),
                   )
                   .map(agent => (
                     <tr key={agent.agentId} className={agent.placeId === store.placeId ? 'own-store' : undefined}>
@@ -292,9 +385,7 @@ function App() {
         </section>
       )}
 
-      {!store && businessesReady && !running && (
-        <p className="muted empty">No store loaded yet.</p>
-      )}
+      {!store && businessesReady && !running && <p className="muted empty">No store loaded yet.</p>}
     </main>
   );
 }

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import Map, { Layer, Marker, NavigationControl, Popup, Source, type MapRef } from 'react-map-gl/maplibre';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import Map, { Layer, Marker, NavigationControl, Source, type MapRef } from 'react-map-gl/maplibre';
 import { setWorkerUrl } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
@@ -22,8 +22,6 @@ const CAMERA_2D = { pitch: 0, bearing: 0 };
 
 export type MapCompetitor = { business: Business; distanceMeters: number };
 
-type Selected = { business: Business; distanceMeters?: number };
-
 function kmToDegrees(lat: number, km: number) {
   return {
     lat: km / KM_PER_DEGREE_LAT,
@@ -42,7 +40,11 @@ function circleRing(lat: number, lng: number, radiusKm: number) {
 }
 
 function radiusPolygon(lat: number, lng: number, radiusKm: number): Feature<Polygon> {
-  return { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [circleRing(lat, lng, radiusKm)] } };
+  return {
+    type: 'Feature',
+    properties: {},
+    geometry: { type: 'Polygon', coordinates: [circleRing(lat, lng, radiusKm)] },
+  };
 }
 
 // Everything except the circle, used to gray out the area outside the simulation
@@ -69,32 +71,34 @@ function windowBounds(lat: number, lng: number, radiusKm: number): [[number, num
   ];
 }
 
-function formatDistance(meters: number) {
-  return meters < 1000 ? `${Math.round(meters)} m` : `${(meters / 1000).toFixed(2)} km`;
-}
-
 export default function StoreMap({
   store,
   competitors,
   radiusKm,
+  selectedId,
+  onSelect,
+  overlay,
 }: {
   store: Business;
   competitors: MapCompetitor[];
   radiusKm: number;
+  selectedId: string | null;
+  onSelect: (placeId: string | null) => void;
+  // Panel drawn over the map, e.g. the selected store's menu
+  overlay?: ReactNode;
 }) {
   const mapRef = useRef<MapRef>(null);
-  const [selected, setSelected] = useState<Selected | null>(null);
   const bounds = useMemo(
     () => windowBounds(store.latitude, store.longitude, radiusKm),
-    [store.latitude, store.longitude, radiusKm]
+    [store.latitude, store.longitude, radiusKm],
   );
   const radiusArea = useMemo(
     () => radiusPolygon(store.latitude, store.longitude, radiusKm),
-    [store.latitude, store.longitude, radiusKm]
+    [store.latitude, store.longitude, radiusKm],
   );
   const outsideArea = useMemo(
     () => outsidePolygon(store.latitude, store.longitude, radiusKm),
-    [store.latitude, store.longitude, radiusKm]
+    [store.latitude, store.longitude, radiusKm],
   );
 
   const [is3d, setIs3d] = useState(true);
@@ -102,7 +106,6 @@ export default function StoreMap({
 
   useEffect(() => {
     mapRef.current?.fitBounds(bounds, { ...camera, duration: 600 });
-    setSelected(null);
   }, [bounds]);
 
   const toggle3d = () => {
@@ -111,7 +114,7 @@ export default function StoreMap({
     mapRef.current?.easeTo({ ...(next ? CAMERA_3D : CAMERA_2D), duration: 800 });
   };
 
-  const pin = (business: Business, kind: 'store' | 'competitor', distanceMeters?: number) => (
+  const pin = (business: Business, kind: 'store' | 'competitor') => (
     <Marker
       key={business.placeId}
       latitude={business.latitude}
@@ -119,10 +122,10 @@ export default function StoreMap({
       anchor="bottom"
       onClick={e => {
         e.originalEvent.stopPropagation();
-        setSelected({ business, distanceMeters });
+        onSelect(business.placeId);
       }}
     >
-      <div className={`map-pin ${kind}`} title={business.name} />
+      <div className={`map-pin ${kind} ${business.placeId === selectedId ? 'selected' : ''}`} title={business.name} />
     </Marker>
   );
 
@@ -135,9 +138,9 @@ export default function StoreMap({
         // Panning stops at the window around the circle, and zooming out stops once the window fills the view
         maxBounds={[...bounds[0], ...bounds[1]]}
         maxPitch={70}
-        onClick={() => setSelected(null)}
+        onClick={() => onSelect(null)}
       >
-        <NavigationControl position="top-right" visualizePitch />
+        <NavigationControl position="bottom-left" visualizePitch />
         <Layer
           id="buildings-3d"
           type="fill-extrusion"
@@ -164,36 +167,13 @@ export default function StoreMap({
           />
         </Source>
 
-        {competitors.map(c => pin(c.business, 'competitor', c.distanceMeters))}
+        {competitors.map(c => pin(c.business, 'competitor'))}
         {pin(store, 'store')}
-
-        {selected && (
-          <Popup
-            latitude={selected.business.latitude}
-            longitude={selected.business.longitude}
-            anchor="bottom"
-            offset={30}
-            closeOnClick={false}
-            onClose={() => setSelected(null)}
-          >
-            <div className="map-popup">
-              <strong>{selected.business.name}</strong>
-              <div>
-                ⭐ {selected.business.rating ? selected.business.rating.toFixed(1) : '–'} ·{' '}
-                {selected.business.reviewsCount} reviews
-              </div>
-              <div className="muted">
-                {selected.distanceMeters === undefined
-                  ? 'Selected store'
-                  : `${formatDistance(selected.distanceMeters)} away`}
-              </div>
-            </div>
-          </Popup>
-        )}
       </Map>
       <button type="button" className="map-toggle" onClick={toggle3d}>
         {is3d ? '2D' : '3D'}
       </button>
+      {overlay}
     </div>
   );
 }

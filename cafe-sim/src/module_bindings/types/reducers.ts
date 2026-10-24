@@ -6,20 +6,36 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
+import AddItemReducer from "../add_item_reducer";
 import ClearStoreDataReducer from "../clear_store_data_reducer";
+import CreateScenarioReducer from "../create_scenario_reducer";
+import DeleteScenarioReducer from "../delete_scenario_reducer";
+import RemoveItemReducer from "../remove_item_reducer";
+import RenameScenarioReducer from "../rename_scenario_reducer";
 import ResetSimulationReducer from "../reset_simulation_reducer";
+import RevertEditReducer from "../revert_edit_reducer";
 import SendMessageReducer from "../send_message_reducer";
 import SetCompetitorsReducer from "../set_competitors_reducer";
+import SetItemPriceReducer from "../set_item_price_reducer";
 import SetNameReducer from "../set_name_reducer";
+import UpdateAddedItemReducer from "../update_added_item_reducer";
 import UpdateSimulationSettingsReducer from "../update_simulation_settings_reducer";
 import UpsertBusinessReducer from "../upsert_business_reducer";
 import UpsertReviewReducer from "../upsert_review_reducer";
 
+export type AddItemParams = __Infer<typeof AddItemReducer>;
 export type ClearStoreDataParams = __Infer<typeof ClearStoreDataReducer>;
+export type CreateScenarioParams = __Infer<typeof CreateScenarioReducer>;
+export type DeleteScenarioParams = __Infer<typeof DeleteScenarioReducer>;
+export type RemoveItemParams = __Infer<typeof RemoveItemReducer>;
+export type RenameScenarioParams = __Infer<typeof RenameScenarioReducer>;
 export type ResetSimulationParams = __Infer<typeof ResetSimulationReducer>;
+export type RevertEditParams = __Infer<typeof RevertEditReducer>;
 export type SendMessageParams = __Infer<typeof SendMessageReducer>;
 export type SetCompetitorsParams = __Infer<typeof SetCompetitorsReducer>;
+export type SetItemPriceParams = __Infer<typeof SetItemPriceReducer>;
 export type SetNameParams = __Infer<typeof SetNameReducer>;
+export type UpdateAddedItemParams = __Infer<typeof UpdateAddedItemReducer>;
 export type UpdateSimulationSettingsParams = __Infer<typeof UpdateSimulationSettingsReducer>;
 export type UpsertBusinessParams = __Infer<typeof UpsertBusinessReducer>;
 export type UpsertReviewParams = __Infer<typeof UpsertReviewReducer>;

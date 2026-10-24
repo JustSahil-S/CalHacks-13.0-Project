@@ -168,6 +168,26 @@ export const Review = __t.object("Review", {
 });
 export type Review = __Infer<typeof Review>;
 
+export const Scenario = __t.object("Scenario", {
+  scenarioId: __t.u32(),
+  name: __t.string(),
+  createdAt: __t.timestamp(),
+});
+export type Scenario = __Infer<typeof Scenario>;
+
+export const ScenarioEdit = __t.object("ScenarioEdit", {
+  editId: __t.u32(),
+  scenarioId: __t.u32(),
+  kind: __t.string(),
+  targetName: __t.string(),
+  name: __t.string(),
+  section: __t.string(),
+  category: __t.string(),
+  priceCents: __t.u32(),
+  updatedAt: __t.timestamp(),
+});
+export type ScenarioEdit = __Infer<typeof ScenarioEdit>;
+
 export const Simulation = __t.object("Simulation", {
   placeId: __t.string(),
   simMinute: __t.u32(),

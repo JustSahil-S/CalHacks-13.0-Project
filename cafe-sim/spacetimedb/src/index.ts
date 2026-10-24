@@ -219,8 +219,39 @@ const menu_source = table(
   }
 );
 
+// A what-if universe for the selected store. The base universe is the real data, and is never edited;
+// a scenario only records its differences from it, so it picks up each refresh of the base data.
+const scenario = table(
+  { name: 'scenario', public: true },
+  {
+    scenario_id: t.u32().primaryKey().autoInc(),
+    name: t.string(),
+    created_at: t.timestamp(),
+  }
+);
+
+// One change a scenario makes to the selected store's menu
+const scenario_edit = table(
+  { name: 'scenario_edit', public: true },
+  {
+    edit_id: t.u32().primaryKey().autoInc(),
+    scenario_id: t.u32().index(),
+    // price (new price for a base item) | remove (base item taken off the menu) | add (new item)
+    kind: t.string(),
+    // Name of the base menu item this edits; menu rows are recreated on refresh, so items are matched by name. Empty for added items.
+    target_name: t.string(),
+    name: t.string(),
+    section: t.string(),
+    category: t.string(),
+    price_cents: t.u32(),
+    updated_at: t.timestamp(),
+  }
+);
+
 const spacetimedb = schema(
   {
+    scenario,
+    scenario_edit,
     user,
     message,
     business,
@@ -441,6 +472,9 @@ function setJob(ctx: ProcedureCtx<Db>, fields: Partial<Omit<NonNullable<ReturnTy
 }
 
 function clearStoreData(tx: Tx) {
+  // Scenarios edit the selected store's menu, so they mean nothing once the store changes
+  tx.db.scenario_edit.clear();
+  tx.db.scenario.clear();
   tx.db.menu_item.clear();
   tx.db.menu_source.clear();
   tx.db.agent_event.clear();
@@ -2186,6 +2220,158 @@ export const fetch_menus = spacetimedb.procedure({}, t.u32(), ctx => {
     setJob(ctx, { status: 'error', message: error instanceof Error ? error.message : String(error) });
     throw error;
   }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SCENARIOS
+// ─────────────────────────────────────────────────────────────────────────────
+const MAX_SCENARIO_NAME_CHARS = 60;
+const MAX_ITEM_NAME_CHARS = 80;
+
+type ScenarioEdit = NonNullable<ReturnType<Tx['db']['scenario_edit']['edit_id']['find']>>;
+
+function requireScenario(tx: Tx, scenario_id: number) {
+  const found = tx.db.scenario.scenario_id.find(scenario_id);
+  if (!found) throw new SenderError(`No scenario with id ${scenario_id}`);
+  return found;
+}
+
+function cleanText(value: string, label: string, maxChars: number, required = true) {
+  const text = value.trim().replace(/\s+/g, ' ');
+  if (required && !text) throw new SenderError(`${label} must not be empty`);
+  if (text.length > maxChars) throw new SenderError(`${label} must be at most ${maxChars} characters`);
+  return text;
+}
+
+function validatePrice(price_cents: number) {
+  if (!Number.isInteger(price_cents) || price_cents < 1 || price_cents > MAX_ITEM_PRICE_CENTS) {
+    throw new SenderError(`Price must be between $0.01 and $${MAX_ITEM_PRICE_CENTS / 100}`);
+  }
+}
+
+// Scenarios only edit the selected store's menu, never a competitor's
+function ownMenuItem(tx: Tx, item_name: string) {
+  const storeId = tx.db.populate_job.job_id.find(JOB_ID)?.place_id ?? '';
+  const item = [...tx.db.menu_item.place_id.filter(storeId)].find(i => i.name === item_name);
+  if (!item) throw new SenderError(`"${item_name}" is not on your store's menu`);
+  return item;
+}
+
+function findEdit(tx: Tx, scenario_id: number, kind: string, target_name: string) {
+  return [...tx.db.scenario_edit.scenario_id.filter(scenario_id)].find(
+    e => e.kind === kind && e.target_name === target_name
+  );
+}
+
+function saveEdit(tx: Tx, existing: ScenarioEdit | undefined, fields: Omit<ScenarioEdit, 'edit_id' | 'updated_at'>) {
+  if (existing) tx.db.scenario_edit.edit_id.update({ ...existing, ...fields, updated_at: tx.timestamp });
+  else tx.db.scenario_edit.insert({ edit_id: 0, ...fields, updated_at: tx.timestamp });
+}
+
+export const create_scenario = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
+  ctx.db.scenario.insert({
+    scenario_id: 0,
+    name: cleanText(name, 'Scenario name', MAX_SCENARIO_NAME_CHARS),
+    created_at: ctx.timestamp,
+  });
+});
+
+export const rename_scenario = spacetimedb.reducer({ scenario_id: t.u32(), name: t.string() }, (ctx, { scenario_id, name }) => {
+  const found = requireScenario(ctx, scenario_id);
+  ctx.db.scenario.scenario_id.update({ ...found, name: cleanText(name, 'Scenario name', MAX_SCENARIO_NAME_CHARS) });
+});
+
+export const delete_scenario = spacetimedb.reducer({ scenario_id: t.u32() }, (ctx, { scenario_id }) => {
+  requireScenario(ctx, scenario_id);
+  ctx.db.scenario_edit.scenario_id.delete(scenario_id);
+  ctx.db.scenario.scenario_id.delete(scenario_id);
+});
+
+// Setting an item back to its real price removes the edit
+export const set_item_price = spacetimedb.reducer(
+  { scenario_id: t.u32(), item_name: t.string(), price_cents: t.u32() },
+  (ctx, { scenario_id, item_name, price_cents }) => {
+    requireScenario(ctx, scenario_id);
+    validatePrice(price_cents);
+    const item = ownMenuItem(ctx, item_name);
+    const existing = findEdit(ctx, scenario_id, 'price', item.name);
+    if (price_cents === (item.override_price_cents ?? item.predicted_price_cents)) {
+      if (existing) ctx.db.scenario_edit.edit_id.delete(existing.edit_id);
+      return;
+    }
+    saveEdit(ctx, existing, {
+      scenario_id,
+      kind: 'price',
+      target_name: item.name,
+      name: item.name,
+      section: item.section,
+      category: item.category,
+      price_cents,
+    });
+  }
+);
+
+export const remove_item = spacetimedb.reducer(
+  { scenario_id: t.u32(), item_name: t.string() },
+  (ctx, { scenario_id, item_name }) => {
+    requireScenario(ctx, scenario_id);
+    const item = ownMenuItem(ctx, item_name);
+    saveEdit(ctx, findEdit(ctx, scenario_id, 'remove', item.name), {
+      scenario_id,
+      kind: 'remove',
+      target_name: item.name,
+      name: item.name,
+      section: item.section,
+      category: item.category,
+      price_cents: item.override_price_cents ?? item.predicted_price_cents,
+    });
+  }
+);
+
+export const add_item = spacetimedb.reducer(
+  { scenario_id: t.u32(), name: t.string(), section: t.string(), price_cents: t.u32() },
+  (ctx, { scenario_id, name, section, price_cents }) => {
+    requireScenario(ctx, scenario_id);
+    validatePrice(price_cents);
+    const itemName = cleanText(name, 'Item name', MAX_ITEM_NAME_CHARS);
+    const itemSection = cleanText(section, 'Section', MAX_ITEM_NAME_CHARS, false) || 'New items';
+    ctx.db.scenario_edit.insert({
+      edit_id: 0,
+      scenario_id,
+      kind: 'add',
+      target_name: '',
+      name: itemName,
+      section: itemSection,
+      category: categorizeMenuItem(itemName, itemSection),
+      price_cents,
+      updated_at: ctx.timestamp,
+    });
+  }
+);
+
+export const update_added_item = spacetimedb.reducer(
+  { edit_id: t.u32(), name: t.string(), section: t.string(), price_cents: t.u32() },
+  (ctx, { edit_id, name, section, price_cents }) => {
+    const edit = ctx.db.scenario_edit.edit_id.find(edit_id);
+    if (!edit || edit.kind !== 'add') throw new SenderError('Only added items can be changed this way');
+    validatePrice(price_cents);
+    const itemName = cleanText(name, 'Item name', MAX_ITEM_NAME_CHARS);
+    const itemSection = cleanText(section, 'Section', MAX_ITEM_NAME_CHARS, false) || 'New items';
+    ctx.db.scenario_edit.edit_id.update({
+      ...edit,
+      name: itemName,
+      section: itemSection,
+      category: categorizeMenuItem(itemName, itemSection),
+      price_cents,
+      updated_at: ctx.timestamp,
+    });
+  }
+);
+
+// Undoes one edit: restores a price or a removed item, or deletes an added item
+export const revert_edit = spacetimedb.reducer({ edit_id: t.u32() }, (ctx, { edit_id }) => {
+  if (!ctx.db.scenario_edit.edit_id.find(edit_id)) throw new SenderError(`No edit with id ${edit_id}`);
+  ctx.db.scenario_edit.edit_id.delete(edit_id);
 });
 
 function validateName(name: string) {
