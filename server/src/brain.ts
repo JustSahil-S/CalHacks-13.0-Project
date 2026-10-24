@@ -4,17 +4,16 @@ import { ScheduleAt } from 'spacetimedb';
 import { roll } from './rng';
 import type { Ctx } from './sim';
 import { rivalSet } from './rivals';
+import { choose, orderPrice } from './choice';
+import { prepareDay, usesDailyChoice } from './today';
+
+export { orderPrice };
 
 export const BATCH_SIZE = 10;
 
 type AgentRow = ReturnType<Ctx['db']['agent']['iter']> extends Iterable<infer R> ? R : never;
 
 const dollars = (cents: number) => `$${(cents / 100).toFixed(2)}`;
-
-export function orderPrice(prices: Map<string, number>, usualOrder: string): number {
-  const keys: string[] = JSON.parse(usualOrder);
-  return keys.reduce((sum, k) => sum + (prices.get(k) ?? 0), 0);
-}
 
 /** What makes two situations "the same" for caching: who, which price change, mood, rival. */
 export function situationKey(a: AgentRow, newCents: number, competitorSig: string): string {
@@ -54,6 +53,25 @@ interface Noticer {
 
 /** Customers who will walk in tomorrow and see a different price for their usual order. */
 export function findNoticers(ctx: Ctx, universeId: bigint, seed: bigint, tick: number): Noticer[] {
+  const u = ctx.db.universe.id.find(universeId);
+  if (u && usesDailyChoice(u.brain)) {
+    // Exactly the choice the day loop will make (same inputs, same dice), but only for customers
+    // whose usual order changed price: nobody else can notice (control copies skip the work).
+    const prices = new Map<string, number>();
+    for (const m of ctx.db.menuItem.universeId.filter(universeId)) prices.set(m.key, m.priceCents);
+    const changed = [...ctx.db.agent.universeId.filter(universeId)].filter(a => orderPrice(prices, a.usualOrder) !== a.refPriceCents);
+    if (!changed.length) return [];
+    const today = prepareDay(ctx, universeId, tick);
+    if (!today) return [];
+    const sig = competitorSignature(ctx, universeId);
+    const out: Noticer[] = [];
+    for (const a of changed) {
+      if (choose(today.input(a), seed, a.key).where !== 'here') continue;
+      const now = orderPrice(prices, a.usualOrder);
+      out.push({ agent: a, newCents: now, key: situationKey(a, now, sig) });
+    }
+    return out;
+  }
   const prices = new Map<string, number>();
   for (const m of ctx.db.menuItem.universeId.filter(universeId)) prices.set(m.key, m.priceCents);
   const sig = competitorSignature(ctx, universeId);

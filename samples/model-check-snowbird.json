@@ -1,0 +1,8 @@
+[
+  { "label": "same prices (sanity)", "brain": "rules", "prices": {} },
+  { "label": "Latte +10%", "brain": "rules", "prices": { "latte": 556 } },
+  { "label": "Latte +10%", "brain": "rules-odds", "prices": { "latte": 556 } },
+  { "label": "Latte +50%", "brain": "rules", "prices": { "latte": 759 } },
+  { "label": "Latte +50%", "brain": "rules-odds", "prices": { "latte": 759 } },
+  { "label": "Latte +20%", "brain": "ai", "prices": { "latte": 607 } }
+]

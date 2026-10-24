@@ -5,6 +5,8 @@ import spacetimedb from './schema';
 import { hash32, roll } from './rng';
 import { competitorSignature, orderPrice, situationKey } from './brain';
 import { chooseRival, rivalSet, switchingEase } from './rivals';
+import { afterDay, baselineOdds, choose, dayOdds, withClaude, type ChoiceState } from './choice';
+import { prepareDay, saveState, usesClaude, usesDailyChoice } from './today';
 
 export type Ctx = ReducerCtx<InferSchema<typeof spacetimedb>>;
 
@@ -94,8 +96,9 @@ export function loadTwin(ctx: Ctx, twin: TwinInput): bigint {
   }
   for (const cu of twin.customers) {
     const usualOrder = JSON.stringify(cu.usualOrder);
-    const pVisit = clamp(cu.visitsPerWeek / 7, 0.02, 0.95);
-    const pHere = pVisit * (0.75 + 0.25 * cu.loyalty);
+    const start = baselineOdds(cu.visitsPerWeek, cu.loyalty);
+    const pVisit = start.pHere + start.pOut;
+    const pHere = start.pHere;
     ctx.db.agent.insert({
       id: 0n,
       universeId: u.id,
@@ -206,8 +209,73 @@ export function stepUniverse(ctx: Ctx, universeId: bigint) {
   let revenue = 0;
   let cogs = 0;
   let notices = 0;
-  const visitors: { a: (typeof agents)[number]; feltOverride: number | null }[] = [];
+  // For daily choice, a visitor's state after today (st2) and Claude's estimate are finished in pass 2,
+  // once the visit's mood is known.
+  const visitors: {
+    a: (typeof agents)[number];
+    feltOverride: number | null;
+    st2: ChoiceState | null;
+    claudeHere: number | null;
+  }[] = [];
+  const useAI = usesClaude(u.brain);
+  // Daily choice (choice.ts) unless this universe runs the original odds system ("-odds" brains).
+  const today = usesDailyChoice(u.brain) ? prepareDay(ctx, universeId, tick) : null;
+  if (today && !ctx.db.choiceStart.universeId.find(universeId)) {
+    ctx.db.choiceStart.insert({ universeId, startTick: tick - 1 });
+  }
+  let regularsToday = 0;
   for (const a of agents) {
+    if (today) {
+      const st = today.stateOf(a);
+      const { where, odds } = choose(today.input(a, st), u.seed, a.key);
+      if (a.visitsPerWeek >= 3 && odds.pHere >= 0.25) regularsToday++;
+      if (where === 'home') continue;
+      if (where !== 'here') {
+        // Another coffee place they know.
+        const rivalKey = today.rivalRange ? where : null;
+        competitorCount++;
+        if (rivalKey) rivalVisits.set(rivalKey, (rivalVisits.get(rivalKey) ?? 0) + 1);
+        if (isTraced) {
+          ctx.db.visit.insert({ id: 0n, universeId, tick, agentKey: a.key, place: rivalKey ? `rival:${rivalKey}` : 'competitor' });
+        }
+        saveState(ctx, a, afterDay(st, where, tick, 0));
+        continue;
+      }
+      const now = orderPrice(prices, a.usualOrder);
+      let next = a;
+      let feltOverride: number | null = null;
+      let claudeHere: number | null = null;
+      if (now !== a.refPriceCents) {
+        // They see a new price for their usual order. Its effect on coming back lives in the
+        // choice model from tomorrow on; Claude's judgment of this person nudges it.
+        const pricePct = a.refPriceCents > 0 ? (now - a.refPriceCents) / a.refPriceCents : 0;
+        const row = useAI ? ctx.db.decisionCache.situationKey.find(situationKey(a, now, compSig)) : null;
+        const ai = row && row.pHere >= 0 ? row : null;
+        if (ai) {
+          feltOverride = ai.satisfaction;
+          claudeHere = ai.pHere;
+        }
+        next = { ...a, refPriceCents: now, lastNoticeTick: tick, lastNoticePct: pricePct, noticeReview: ai ? ai.reviewText : '' };
+        notices++;
+        const dir = pricePct > 0 ? 'up' : 'down';
+        ctx.db.memory.insert({
+          id: 0n,
+          universeId,
+          agentKey: a.key,
+          tick,
+          text: ai
+            ? ai.memory
+            : `My usual order went ${dir} from $${(a.refPriceCents / 100).toFixed(2)} to $${(now / 100).toFixed(2)}.`,
+        });
+        logEvent(ctx, universeId, tick, 'notice_price', a.key, `${Math.round(pricePct * 100)}% (${ai ? 'ai' : 'rules'}): here ${odds.pHere.toFixed(2)}`);
+      }
+      hereCount++;
+      if (isTraced) ctx.db.visit.insert({ id: 0n, universeId, tick, agentKey: a.key, place: 'here' });
+      revenue += now * scale;
+      cogs += orderPrice(costs, a.usualOrder) * scale;
+      visitors.push({ a: { ...next, visitsHere: next.visitsHere + 1 }, feltOverride, st2: afterDay(st, 'here', tick, now), claudeHere });
+      continue;
+    }
     const r = roll(u.seed, tick, a.key, 'where');
     if (r < a.pHere) {
       const now = orderPrice(prices, a.usualOrder);
@@ -216,7 +284,7 @@ export function stepUniverse(ctx: Ctx, universeId: bigint) {
       if (now !== a.refPriceCents) {
         const pricePct = a.refPriceCents > 0 ? (now - a.refPriceCents) / a.refPriceCents : 0;
         const row =
-          u.brain === 'ai'
+          useAI
             ? ctx.db.decisionCache.situationKey.find(situationKey(a, now, compSig))
             : null;
         const ai = row && row.pHere >= 0 ? row : null; // null -> rules brain only
@@ -265,7 +333,7 @@ export function stepUniverse(ctx: Ctx, universeId: bigint) {
       if (isTraced) ctx.db.visit.insert({ id: 0n, universeId, tick, agentKey: a.key, place: 'here' });
       revenue += now * scale;
       cogs += orderPrice(costs, a.usualOrder) * scale;
-      visitors.push({ a: { ...next, visitsHere: next.visitsHere + 1 }, feltOverride });
+      visitors.push({ a: { ...next, visitsHere: next.visitsHere + 1 }, feltOverride, st2: null, claudeHere: null });
     } else if (r < a.pHere + a.pCompetitor) {
       // Which rival? Weighted by rating, distance and price, among those in this experiment's radius.
       const rivalKey = rset ? chooseRival(rset, roll(u.seed, tick, a.key, 'which')) : null;
@@ -295,7 +363,7 @@ export function stepUniverse(ctx: Ctx, universeId: bigint) {
   let reviews = 0;
   let starsSum = 0;
   let priceMentions = 0;
-  for (const { a, feltOverride } of visitors) {
+  for (const { a, feltOverride, st2, claudeHere } of visitors) {
     // Annoyance at a price increase fades over two weeks.
     const sinceNotice = a.lastNoticeTick >= 0 ? tick - a.lastNoticeTick : Infinity;
     const recentIncrease = sinceNotice <= 14 && a.lastNoticePct > 0;
@@ -306,7 +374,7 @@ export function stepUniverse(ctx: Ctx, universeId: bigint) {
       feltOverride ?? clamp(4.4 - 0.08 * Math.max(0, waitMin - 5) - pricePain, 1, 5);
     let next = { ...a, satisfaction: 0.75 * a.satisfaction + 0.25 * felt };
     if (felt < 3) {
-      const moved = next.pHere * 0.06;
+      const moved = today ? 0 : next.pHere * 0.06;
       next = { ...next, pHere: next.pHere - moved, pCompetitor: next.pCompetitor + moved };
       logEvent(ctx, universeId, tick, 'bad_visit', a.key, `felt ${felt.toFixed(1)}/5`);
     }
@@ -325,16 +393,25 @@ export function stepUniverse(ctx: Ctx, universeId: bigint) {
       starsSum += stars;
       if (mentionsPrice) priceMentions++;
     }
+    if (today && st2) {
+      // Daily choice: blend in Claude's estimate (with the mood this visit left), save the state,
+      // and keep tomorrow's odds on the agent for the customer card and stats.
+      const s = claudeHere !== null ? withClaude(today.input(next, st2, tick + 1), claudeHere, tick) : st2;
+      saveState(ctx, next, s);
+      const o = dayOdds(today.input(next, s, tick + 1));
+      next = { ...next, pHere: o.pHere, pCompetitor: o.pOut, pSkip: o.pSkip };
+    }
     ctx.db.agent.id.update(next);
   }
 
   let regularsActive = 0;
   let satisfactionSum = 0;
   for (const a of ctx.db.agent.universeId.filter(universeId)) {
-    if (a.visitsPerWeek >= 3 && a.pHere >= 0.25) regularsActive++;
+    if (!today && a.visitsPerWeek >= 3 && a.pHere >= 0.25) regularsActive++;
     satisfactionSum += a.satisfaction;
   }
 
+  if (today) regularsActive = regularsToday;
   const profit = revenue - cogs - c.rentPerDayCents - c.wagesPerDayCents;
   ctx.db.dailyMetric.insert({
     id: 0n,

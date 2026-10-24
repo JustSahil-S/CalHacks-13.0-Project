@@ -1,0 +1,5 @@
+[
+  { "label": "Latte +20%", "brain": "ai", "prices": { "latte": 600 } },
+  { "label": "Latte +50%", "brain": "ai", "prices": { "latte": 750 } },
+  { "label": "Latte +50%", "brain": "ai-odds", "prices": { "latte": 750 } }
+]

@@ -290,6 +290,53 @@ export const menuSource = table(
   }
 );
 
+// What each customer carries from day to day in the daily-choice model (choice.ts): habits, what
+// they're used to paying, Claude's fading nudge and the places they know. One row per agent, made
+// the first time they go out; agents who haven't yet use their starting values.
+export const agentChoice = table(
+  { name: 'agent_choice' },
+  {
+    agentId: t.u64().primaryKey(),
+    universeId: t.u64().index('btree'),
+    habitHere: t.f64(),
+    habitOut: t.f64(),
+    habitTick: t.u32(),
+    anchorCents: t.f64(),
+    shift: t.f64(),
+    shiftTick: t.u32(),
+    lastHereTick: t.u32(),
+    knownJson: t.string(),
+  }
+);
+
+// The daily-choice state per customer (choice.ts ChoiceState): habits, what they paid before the
+// experiment, what they're used to paying, Claude's fading nudge. Made the first time they go out.
+// (Supersedes agent_choice, kept only because dropping a table isn't an additive migration.)
+export const agentDay = table(
+  { name: 'agent_day' },
+  {
+    agentId: t.u64().primaryKey(),
+    universeId: t.u64().index('btree'),
+    habitHere: t.f64(),
+    habitOut: t.f64(),
+    habitTick: t.u32(),
+    baseCents: t.f64(),
+    anchorCents: t.f64(),
+    shift: t.f64(),
+    shiftTick: t.u32(),
+    lastHereTick: t.u32(),
+  }
+);
+
+// The day before a universe's first daily-choice day (today.ts choiceStart).
+export const choiceStart = table(
+  { name: 'choice_start' },
+  {
+    universeId: t.u64().primaryKey(),
+    startTick: t.u32(),
+  }
+);
+
 // One light row per build for clients: what a café picker and a build progress line need,
 // without the scraped reviews and customer JSON that twin_build carries.
 export const buildCard = table(
@@ -470,6 +517,9 @@ const spacetimedb = schema(
     llmLog,
     twinBuild,
     buildCard,
+    agentChoice,
+    agentDay,
+    choiceStart,
     menuSource,
     menuCandidate,
     twinProfile,

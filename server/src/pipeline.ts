@@ -417,7 +417,8 @@ export function advanceRivalScan(ctx: ProcCtx, buildId: bigint) {
       const root = b.universeId;
       if (root !== 0n) {
         for (const u of tx.db.universe.iter()) {
-          if ((u.id === root || u.parentId === root) && !tx.db.universeBuild.universeId.find(u.id)) {
+          // Not running copies: they finish on the list they started with, so paired futures stay paired.
+          if ((u.id === root || u.parentId === root) && u.status !== 'running' && !tx.db.universeBuild.universeId.find(u.id)) {
             tx.db.universeBuild.insert({ universeId: u.id, buildId });
           }
         }

@@ -5,6 +5,7 @@ import { ScheduleAt } from 'spacetimedb';
 import spacetimedb, { buildJob, clockJob, decisionJob, mapJob, profileJob, rivalJob } from './schema';
 import { fetchAreaMap } from './areamap';
 import { syncCard } from './cards';
+import { usesClaude } from './today';
 import { realMenuItems } from './menu';
 import { callClaude } from './claude';
 import { advanceBuild, advanceRivalScan, fixedCosts, inspectMenuCrawl, inspectMenuSearch, testMenuRead, queueProfileJobs, usableReviews, nominalRevenuePerDay, profileBatch, SCAN } from './pipeline';
@@ -149,7 +150,8 @@ function launchExperiment(
   const options = parseJson<ExperimentOption[]>(a.optionsJson, 'optionsJson');
   if (options.length < 2) throw new SenderError('need a control plus at least one option');
   if (a.copies < 1 || a.copies > 50) throw new SenderError('copies must be 1..50');
-  if (a.brain !== 'ai' && a.brain !== 'rules') throw new SenderError('brain must be "ai" or "rules"');
+  // "ai"/"rules": daily-choice model; "ai-odds"/"rules-odds": the original odds system (for comparison).
+  if (!['ai', 'rules', 'ai-odds', 'rules-odds'].includes(a.brain)) throw new SenderError('brain must be ai, rules, ai-odds or rules-odds');
   if (radiusM < 100 || radiusM > MAX_RADIUS_M) throw new SenderError('radius must be 100 m to 7 miles');
   if (!isAdmin(ctx)) {
     // Public demo limits: keep Claude spend small and the shared database responsive.
@@ -199,7 +201,7 @@ export const clock = spacetimedb.reducer({ onSchedule: clockJob }, { job: clockJ
   const running = [...ctx.db.universe.iter()].filter(u => u.status === 'running');
   for (const u of running) {
     // AI universes wait until Claude has answered for everyone who notices a change tomorrow.
-    if (u.brain === 'ai' && !decisionsReady(ctx, u.id, u.seed, u.currentTick + 1)) continue;
+    if (usesClaude(u.brain) && !decisionsReady(ctx, u.id, u.seed, u.currentTick + 1)) continue;
     stepUniverse(ctx, u.id);
   }
   const experiments = new Set(running.map(u => u.experimentId).filter(id => id !== 0n));
@@ -225,6 +227,9 @@ export const reset_all = spacetimedb.reducer(ctx => {
   for (const r of ctx.db.experiment.iter()) ctx.db.experiment.id.delete(r.id);
   for (const r of ctx.db.experimentResult.iter()) ctx.db.experimentResult.id.delete(r.id);
   for (const r of ctx.db.decisionRequest.iter()) ctx.db.decisionRequest.situationKey.delete(r.situationKey);
+  for (const r of ctx.db.agentChoice.iter()) ctx.db.agentChoice.agentId.delete(r.agentId);
+  for (const r of ctx.db.agentDay.iter()) ctx.db.agentDay.agentId.delete(r.agentId);
+  for (const r of ctx.db.choiceStart.iter()) ctx.db.choiceStart.universeId.delete(r.universeId);
 });
 
 /** Forget cached AI answers: all of them, or only the rules fallbacks (to retry Claude). */

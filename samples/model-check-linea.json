@@ -1,0 +1,10 @@
+[
+  { "label": "same prices (sanity)", "brain": "rules", "prices": {} },
+  { "label": "Coffee +10%", "brain": "rules", "prices": { "coffee": 578 } },
+  { "label": "Coffee +10%", "brain": "rules-odds", "prices": { "coffee": 578 } },
+  { "label": "Coffee +50%", "brain": "rules", "prices": { "coffee": 788 } },
+  { "label": "Coffee +50%", "brain": "rules-odds", "prices": { "coffee": 788 } },
+  { "label": "Coffee +100%", "brain": "rules", "prices": { "coffee": 1050 } },
+  { "label": "Coffee +100%", "brain": "rules-odds", "prices": { "coffee": 1050 } },
+  { "label": "Coffee +20%", "brain": "ai", "prices": { "coffee": 630 } }
+]
