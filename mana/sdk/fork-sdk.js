@@ -43294,17 +43294,17 @@ function dl(e, t, n, r) {
 		gainers(t) {
 			let n = e.db.experiment.id.find(t), r = f(t);
 			if (!n || !r.length) return [];
-			let i = e.db.universeBuild.universeId.find(n.baseUniverseId)?.buildId, a = new Map([...e.db.rival.iter()].filter((e) => e.buildId === i).map((e) => [e.key, e.name])), o = e.db.cafe.universeId.find(n.baseUniverseId)?.customerScale ?? 4, s = /* @__PURE__ */ new Map(), c = /* @__PURE__ */ new Map();
+			let i = new Map([...e.db.rival.iter()].map((e) => [e.key, e.name])), a = e.db.cafe.universeId.find(n.baseUniverseId)?.customerScale ?? 4, o = /* @__PURE__ */ new Map(), s = /* @__PURE__ */ new Map();
 			for (let t of r) {
-				c.set(t.optionLabel, (c.get(t.optionLabel) ?? 0) + 1);
-				let n = s.get(t.optionLabel) ?? /* @__PURE__ */ new Map();
+				s.set(t.optionLabel, (s.get(t.optionLabel) ?? 0) + 1);
+				let n = o.get(t.optionLabel) ?? /* @__PURE__ */ new Map();
 				for (let r of e.db.rivalTally.iter()) r.universeId === t.id && n.set(r.rivalKey, (n.get(r.rivalKey) ?? 0) + r.visits);
-				s.set(t.optionLabel, n);
+				o.set(t.optionLabel, n);
 			}
-			let l = (e, t) => e / (c.get(t) || 1) / Math.max(1, n.days) * o, u = s.get("no change") ?? /* @__PURE__ */ new Map();
-			return [...s.get("price change") ?? /* @__PURE__ */ new Map()].map(([e, t]) => ({
-				name: a.get(e) ?? e,
-				perDay: l(t, "price change") - l(u.get(e) ?? 0, "no change")
+			let c = (e, t) => e / (s.get(t) || 1) / Math.max(1, n.days) * a, l = o.get("no change") ?? /* @__PURE__ */ new Map();
+			return [...o.get("price change") ?? /* @__PURE__ */ new Map()].map(([e, t]) => ({
+				name: i.get(e) ?? e,
+				perDay: c(t, "price change") - c(l.get(e) ?? 0, "no change")
 			})).filter((e) => e.perDay >= .5).sort((e, t) => t.perDay - e.perDay);
 		},
 		watchExperiment(e) {

@@ -327,8 +327,9 @@ function makeFork(conn: DbConnection, identity: string, httpHost: string, dbName
       const e = conn.db.experiment.id.find(expId);
       const unis = universes(expId);
       if (!e || !unis.length) return [];
-      const build = conn.db.universeBuild.universeId.find(e.baseUniverseId)?.buildId;
-      const names = new Map([...conn.db.rival.iter()].filter(r => r.buildId === build).map(r => [r.key, r.name]));
+      // Rival keys come from Google place ids, so a key names the same place in every build
+      // (also after a café is rebuilt with a new menu).
+      const names = new Map([...conn.db.rival.iter()].map(r => [r.key, r.name]));
       const scale = conn.db.cafe.universeId.find(e.baseUniverseId)?.customerScale ?? 4;
       const totals = new Map<string, Map<string, number>>();
       const copies = new Map<string, number>();
