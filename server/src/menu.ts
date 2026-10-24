@@ -54,9 +54,14 @@ export function menuUrlScore(url: string, website: string): number {
   if (!url.startsWith('http') || SKIP.test(url)) return 0;
   if (DELIVERY.test(url) || THIRD_PARTY.test(url)) return 1;
   if (ORDERING.test(url)) return 6;
-  if (own && hostOf(url).endsWith(own) && /menu/i.test(url)) return 5;
+  const path = url.replace(/^https?:\/\/[^/?#]+/i, '').split(/[?#]/)[0];
+  if (own && hostOf(url).endsWith(own)) {
+    // Their own site: a menu page, or the homepage (crawled more widely for menu links). Other
+    // pages of it (careers, stockists, about) aren't worth a crawl.
+    if (/menu/i.test(path)) return 5;
+    return path === '' || path === '/' ? 2 : 0;
+  }
   if (/menu/i.test(url)) return 3;
-  if (own && hostOf(url).endsWith(own)) return 2;
   return 0;
 }
 
