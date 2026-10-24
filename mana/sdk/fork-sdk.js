@@ -42819,8 +42819,10 @@ var Jc = {
 	cafeMarker = null;
 	rivalMarkers = [];
 	ring = null;
+	targets = [];
+	painted = /* @__PURE__ */ new Map();
 	constructor(e) {
-		this.host = e, al(), getComputedStyle(e).position === "static" && (e.style.position = "relative"), this.map = new Zc.default.Map({
+		this.host = e, ll(), getComputedStyle(e).position === "static" && (e.style.position = "relative"), this.map = new Zc.default.Map({
 			container: e,
 			style: nl,
 			center: [-122.4194, 37.7749],
@@ -42861,6 +42863,7 @@ var Jc = {
 			features: []
 		};
 		for (let t of [
+			"painted",
 			"mask",
 			"ring",
 			"rivals",
@@ -42871,6 +42874,25 @@ var Jc = {
 			data: e
 		});
 		this.map.addLayer({
+			id: "painted",
+			type: "fill-extrusion",
+			source: "painted",
+			paint: {
+				"fill-extrusion-color": [
+					"match",
+					["get", "role"],
+					"cafe",
+					tl.cafe,
+					tl.rival
+				],
+				"fill-extrusion-height": ["get", "h"],
+				"fill-extrusion-base": ["get", "base"],
+				"fill-extrusion-opacity": 1,
+				"fill-extrusion-vertical-gradient": !0
+			}
+		}), this.showPainted(), this.map.on("moveend", () => this.schedulePaint()), this.map.on("sourcedata", (e) => {
+			e.sourceId === "osm" && e.tile && this.schedulePaint();
+		}), this.map.addLayer({
 			id: "mask",
 			type: "fill",
 			source: "mask",
@@ -42962,6 +42984,38 @@ var Jc = {
 			}
 		});
 	}
+	paintTimer = null;
+	schedulePaint() {
+		!this.paintTimer && this.alive && (this.paintTimer = setTimeout(() => {
+			this.paintTimer = null, this.alive && this.paint();
+		}, 300));
+	}
+	paint() {
+		if (!this.map.getLayer("buildings") || !this.map.getSource("painted")) return;
+		let e = !1;
+		if (this.map.getZoom() >= 13) {
+			let t = this.map.getCanvas();
+			for (let n of this.targets) {
+				if (this.painted.has(n.key)) continue;
+				let [r, i] = this.ll(n.x, n.y), a = this.map.project([r, i]);
+				if (a.x < 0 || a.y < 0 || a.x > t.clientWidth || a.y > t.clientHeight) continue;
+				let o = il(this.map.queryRenderedFeatures([[a.x - 30, a.y - 30], [a.x + 30, a.y + 30]], { layers: ["buildings"] }), r, i, this.mPerLng);
+				o && (this.painted.set(n.key, al(n.role, o.ring, o.h, o.base)), e = !0);
+			}
+		}
+		e && this.showPainted();
+	}
+	showPainted() {
+		this.map.getSource("painted")?.setData({
+			type: "FeatureCollection",
+			features: [...this.targets].reverse().map((e) => this.painted.get(e.key)).filter((e) => !!e)
+		});
+	}
+	unpaintStale() {
+		let e = new Set(this.targets.map((e) => e.key)), t = !1;
+		for (let n of [...this.painted.keys()]) e.has(n) || (this.painted.delete(n), t = !0);
+		t && this.showPainted();
+	}
 	declutter() {
 		let e = performance.now();
 		if (e - this.lastDeclutter < 120) return;
@@ -42977,14 +43031,20 @@ var Jc = {
 	lastDeclutter = 0;
 	setMap(e) {
 		this.lat0 = e.center.lat, this.lng0 = e.center.lng, this.mPerLng = 111320 * Math.cos(this.lat0 * Math.PI / 180), this.areaRadius = e.radius, this.cafeMarker?.remove(), this.cafeMarker = new Zc.default.Marker({
-			element: il("cafe", e.cafe.name, ""),
-			anchor: "bottom"
+			element: cl("cafe", e.cafe.name, ""),
+			anchor: "bottom",
+			offset: [0, -34]
 		}).setLngLat(this.ll(e.cafe.x, e.cafe.y)).addTo(this.map), this.map.jumpTo({
 			center: this.ll(0, 0),
 			zoom: 15,
 			pitch: $c,
 			bearing: this.bearing
-		});
+		}), this.targets = [{
+			key: "cafe",
+			role: "cafe",
+			x: e.cafe.x,
+			y: e.cafe.y
+		}], this.painted.clear(), this.showPainted(), this.schedulePaint();
 	}
 	setRivals(e, t) {
 		this.shownRadiusM = t;
@@ -42994,9 +43054,9 @@ var Jc = {
 		for (let e of n) {
 			let t = e.distanceM / 1609, n = t < 1 ? `${t.toFixed(2)} mi` : `${t.toFixed(1)} mi`;
 			this.rivalMarkers.push(new Zc.default.Marker({
-				element: il("rival", e.name, n),
+				element: cl("rival", e.name, n),
 				anchor: "bottom",
-				offset: [0, -6]
+				offset: [0, -24]
 			}).setLngLat(this.ll(e.x, e.y)).addTo(this.map));
 		}
 		let r = () => {
@@ -43012,7 +43072,12 @@ var Jc = {
 				}))
 			}), this.drawRadius(t);
 		};
-		this.map.isStyleLoaded() ? r() : this.ready.then(r), this.frame("radius");
+		this.targets = [...this.targets.filter((e) => e.role === "cafe"), ...e.map((e) => ({
+			key: e.key,
+			role: "rival",
+			x: e.x,
+			y: e.y
+		}))], this.unpaintStale(), this.schedulePaint(), this.map.isStyleLoaded() ? r() : this.ready.then(r), this.frame("radius");
 	}
 	frame(e) {
 		let t = e === "street" ? this.areaRadius : Math.max(this.areaRadius, this.shownRadiusM * 1.08), n = this.ll(-t, -t), r = this.ll(t, t), i = this.map.cameraForBounds([n, r], {
@@ -43085,12 +43150,62 @@ var Jc = {
 		}));
 	}
 	dispose() {
-		this.alive = !1, this.cafeMarker?.remove();
+		this.alive = !1, this.paintTimer && clearTimeout(this.paintTimer), this.cafeMarker?.remove();
 		for (let e of this.rivalMarkers) e.remove();
 		this.map.remove();
 	}
 };
-function il(e, t, n) {
+function il(e, t, n, r) {
+	let i = null;
+	for (let a of e) {
+		let e = a.geometry, o = e.type === "Polygon" ? [e.coordinates] : e.type === "MultiPolygon" ? e.coordinates : [], s = Number(a.properties?.render_height ?? 8), c = Number(a.properties?.render_min_height ?? 0);
+		for (let e of o) {
+			let a = e[0];
+			if (ol(a, t, n)) return {
+				ring: a,
+				h: s,
+				base: c
+			};
+			let [o, l] = sl(a), u = Math.hypot((o - t) * r, (l - n) * 110540);
+			u < 25 && (!i || u < i.d) && (i = {
+				ring: a,
+				h: s,
+				base: c,
+				d: u
+			});
+		}
+	}
+	return i;
+}
+function al(e, t, n, r) {
+	let [i, a] = sl(t), o = t.map(([e, t]) => [i + (e - i) * 1.02, a + (t - a) * 1.02]);
+	return {
+		type: "Feature",
+		properties: {
+			role: e,
+			h: n + .5,
+			base: r
+		},
+		geometry: {
+			type: "Polygon",
+			coordinates: [o]
+		}
+	};
+}
+function ol(e, t, n) {
+	let r = !1;
+	for (let i = 0, a = e.length - 1; i < e.length; a = i++) {
+		let [o, s] = e[i], [c, l] = e[a];
+		s > n != l > n && t < (c - o) * (n - s) / (l - s) + o && (r = !r);
+	}
+	return r;
+}
+function sl(e) {
+	let t = 0, n = 0;
+	for (let [r, i] of e) t += r, n += i;
+	return [t / e.length, n / e.length];
+}
+function cl(e, t, n) {
 	let r = document.createElement("div");
 	if (r.className = `fork-pin ${e}`, r.textContent = t, n) {
 		let e = document.createElement("span");
@@ -43098,15 +43213,15 @@ function il(e, t, n) {
 	}
 	return r;
 }
-function al() {
+function ll() {
 	if (document.getElementById("fork-maplibre-css")) return;
 	let e = document.createElement("style");
 	e.id = "fork-maplibre-css", e.textContent = `${Qc}
 .maplibregl-ctrl-attrib{font:10px ui-monospace,monospace;background:rgba(243,238,228,.8)!important}`, document.head.appendChild(e);
 }
 // src/sdk.ts
-var ol = 2414, sl = 11265, cl = 5, ll = (e) => (Math.max(1, e.rating) / 4.5) ** 3 * Math.exp(-e.distanceM / 1200) * (e.priceIndex < .95 ? 1.15 : e.priceIndex > 1.05 ? .85 : 1);
-function ul(e = {}) {
+var ul = 2414, dl = 11265, fl = 5, pl = (e) => (Math.max(1, e.rating) / 4.5) ** 3 * Math.exp(-e.distanceM / 1200) * (e.priceIndex < .95 ? 1.15 : e.priceIndex > 1.05 ? .85 : 1);
+function ml(e = {}) {
 	let t = e.host ?? "wss://maincloud.spacetimedb.com", n = e.db ?? "fork-calhacks", r = `fork-sdk-token:${t}/${n}`, i;
 	try {
 		i = localStorage.getItem(r) ?? void 0;
@@ -43116,7 +43231,7 @@ function ul(e = {}) {
 			try {
 				localStorage.setItem(r, o);
 			} catch {}
-			let s = dl(i, a.toHexString(), t.replace(/^ws/, "http"), n);
+			let s = hl(i, a.toHexString(), t.replace(/^ws/, "http"), n);
 			s.subscribe("base", [
 				"SELECT * FROM build_card",
 				"SELECT * FROM build_owner",
@@ -43130,7 +43245,7 @@ function ul(e = {}) {
 		o(i);
 	});
 }
-function dl(e, t, n, r) {
+function hl(e, t, n, r) {
 	let i = /* @__PURE__ */ new Set(), a = !1, o = () => {
 		a || (a = !0, requestAnimationFrame(() => {
 			a = !1;
@@ -43253,7 +43368,7 @@ function dl(e, t, n, r) {
 				distanceM: e.distanceM,
 				rating: e.rating,
 				priceIndex: e.priceIndex,
-				weight: ll(e)
+				weight: pl(e)
 			})).sort((e, t) => e.distanceM - t.distanceM);
 		},
 		experiments(t) {
@@ -43330,7 +43445,7 @@ function dl(e, t, n, r) {
 	};
 	return p;
 }
-var fl = class {
+var gl = class {
 	fork;
 	scene;
 	hood = null;
@@ -43344,11 +43459,11 @@ var fl = class {
 	showCall = 0;
 	playing = !1;
 	speed = 1;
-	radiusM = ol;
+	radiusM = ul;
 	onDay = () => {};
 	onPick = () => {};
 	constructor(e, t) {
-		this.fork = t, pl(), this.scene = new rl(e), this.scene.onFrame = (e) => this.tick(e), this.scene.onPick = (e) => {
+		this.fork = t, _l(), this.scene = new rl(e), this.scene.onFrame = (e) => this.tick(e), this.scene.onPick = (e) => {
 			this.selected = e, this.onPick(e === null ? null : this.customer(e));
 		}, t.onChange(() => this.dirty = !0);
 	}
@@ -43412,7 +43527,7 @@ var fl = class {
 		if (!this.crowd || !t) return;
 		let n = t.forkTick + 1, r = t.currentTick;
 		if (r < n) return;
-		if (this.playing && (this.dayFloat += e * this.speed / cl), this.dayFloat >= r + 1 && (this.dayFloat = this.playing ? n : r + .999), this.dayFloat < n && (this.dayFloat = n), this.dirty) {
+		if (this.playing && (this.dayFloat += e * this.speed / fl), this.dayFloat >= r + 1 && (this.dayFloat = this.playing ? n : r + .999), this.dayFloat < n && (this.dayFloat = n), this.dirty) {
 			this.dirty = !1;
 			let e = this.fork.conn.db;
 			this.crowd.setVisits([...e.visit.iter()].filter((e) => e.universeId === t.id)), this.crowd.setNotices([...e.event.iter()].filter((e) => e.universeId === t.id && e.kind === "notice_price"));
@@ -43451,9 +43566,9 @@ var fl = class {
 		};
 	}
 };
-function pl() {
+function _l() {
 	if (document.getElementById("fork-sdk-styles")) return;
 	let e = document.createElement("style");
 	e.id = "fork-sdk-styles", e.textContent = "\n.fork-pin{position:absolute;pointer-events:none;transform:translate(-50%,-100%);font:600 11px ui-monospace,'IBM Plex Mono',monospace;letter-spacing:.06em;text-transform:uppercase;padding:4px 8px;border-radius:4px;color:#fff;white-space:nowrap;z-index:3}\n.fork-pin.cafe{background:#d9472b}.fork-pin.rival{background:#1f6f6b}.fork-pin span{opacity:.8;font-weight:400;margin-left:6px}", document.head.appendChild(e);
 }
-export { ol as DEFAULT_RADIUS_M, fl as ForkMap, sl as MAX_RADIUS_M, ul as connectFork, ll as pull };
+export { ul as DEFAULT_RADIUS_M, gl as ForkMap, dl as MAX_RADIUS_M, ml as connectFork, pl as pull };

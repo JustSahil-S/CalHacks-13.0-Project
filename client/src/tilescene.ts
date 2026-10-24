@@ -103,6 +103,10 @@ export class TileScene {
   private cafeMarker: maplibregl.Marker | null = null;
   private rivalMarkers: maplibregl.Marker[] = [];
   private ring: [number, number] | null = null;
+  // The café's building and each rival's, painted in their colors (meters east/north of the café).
+  private targets: { key: string; role: 'cafe' | 'rival'; x: number; y: number }[] = [];
+  // Target key -> its building, copied from the map tiles (ids there aren't unique, so no feature state).
+  private painted = new Map<string, GeoJSON.Feature>();
 
   constructor(private host: HTMLElement) {
     injectMapCss();
@@ -174,7 +178,26 @@ export class TileScene {
 
   private addOverlays() {
     const empty: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
-    for (const id of ['mask', 'ring', 'rivals', 'people', 'selected']) this.map.addSource(id, { type: 'geojson', data: empty });
+    for (const id of ['painted', 'mask', 'ring', 'rivals', 'people', 'selected']) this.map.addSource(id, { type: 'geojson', data: empty });
+    // The café's and rivals' buildings, redrawn in their colors a hair larger than the map's own.
+    this.map.addLayer({
+      id: 'painted',
+      type: 'fill-extrusion',
+      source: 'painted',
+      paint: {
+        'fill-extrusion-color': ['match', ['get', 'role'], 'cafe', C.cafe, C.rival],
+        'fill-extrusion-height': ['get', 'h'],
+        'fill-extrusion-base': ['get', 'base'],
+        'fill-extrusion-opacity': 1,
+        'fill-extrusion-vertical-gradient': true,
+      },
+    });
+    this.showPainted();
+    // The map rarely goes idle while people walk, so look for buildings after moves and tile loads.
+    this.map.on('moveend', () => this.schedulePaint());
+    this.map.on('sourcedata', e => {
+      if (e.sourceId === 'osm' && (e as { tile?: unknown }).tile) this.schedulePaint();
+    });
     // Beyond the radius fades to paper, so the competitive area reads at a glance.
     this.map.addLayer({ id: 'mask', type: 'fill', source: 'mask', paint: { 'fill-color': C.paper, 'fill-opacity': 0.88 } });
     this.map.addLayer({
@@ -234,6 +257,66 @@ export class TileScene {
   }
 
   /** Hide labels that would overlap a more important one (café first, then strongest rivals). */
+  private paintTimer: ReturnType<typeof setTimeout> | null = null;
+  private schedulePaint() {
+    if (this.paintTimer || !this.alive) return;
+    this.paintTimer = setTimeout(() => {
+      this.paintTimer = null;
+      if (this.alive) this.paint();
+    }, 300);
+  }
+
+  /**
+   * Find the map building each target (café, rivals) sits in and draw it in color. Only buildings
+   * drawn on screen can be found, so far-away rivals get colored once the view comes near them.
+   */
+  private paint() {
+    // Wait for our overlay source too: a building found before it exists would never be drawn.
+    if (!this.map.getLayer('buildings') || !this.map.getSource('painted')) return;
+    let changed = false;
+    if (this.map.getZoom() >= 13) {
+      const canvas = this.map.getCanvas();
+      for (const t of this.targets) {
+        if (this.painted.has(t.key)) continue;
+        const [lng, lat] = this.ll(t.x, t.y);
+        const pt = this.map.project([lng, lat]);
+        if (pt.x < 0 || pt.y < 0 || pt.x > canvas.clientWidth || pt.y > canvas.clientHeight) continue;
+        const hits = this.map.queryRenderedFeatures(
+          [
+            [pt.x - 30, pt.y - 30],
+            [pt.x + 30, pt.y + 30],
+          ],
+          { layers: ['buildings'] }
+        );
+        const b = buildingAt(hits, lng, lat, this.mPerLng);
+        if (!b) continue;
+        this.painted.set(t.key, paintedBuilding(t.role, b.ring, b.h, b.base));
+        changed = true;
+      }
+    }
+    if (changed) this.showPainted();
+  }
+
+  private showPainted() {
+    (this.map.getSource('painted') as GeoJSONSource | undefined)?.setData({
+      type: 'FeatureCollection',
+      // The café last, so it wins if a rival shares its building.
+      features: [...this.targets].reverse().map(t => this.painted.get(t.key)).filter((f): f is GeoJSON.Feature => !!f),
+    });
+  }
+
+  /** Forget colored buildings that are no longer targets (new café, smaller radius). */
+  private unpaintStale() {
+    const keep = new Set(this.targets.map(t => t.key));
+    let changed = false;
+    for (const key of [...this.painted.keys()]) {
+      if (keep.has(key)) continue;
+      this.painted.delete(key);
+      changed = true;
+    }
+    if (changed) this.showPainted();
+  }
+
   private declutter() {
     const now = performance.now();
     if (now - this.lastDeclutter < 120) return;
@@ -259,10 +342,15 @@ export class TileScene {
     this.mPerLng = 111320 * Math.cos((this.lat0 * Math.PI) / 180);
     this.areaRadius = map.radius;
     this.cafeMarker?.remove();
-    this.cafeMarker = new maplibregl.Marker({ element: pin('cafe', map.cafe.name, ''), anchor: 'bottom' })
+    this.cafeMarker = new maplibregl.Marker({ element: pin('cafe', map.cafe.name, ''), anchor: 'bottom', offset: [0, -34] }) // float above the (red) building
       .setLngLat(this.ll(map.cafe.x, map.cafe.y))
       .addTo(this.map);
     this.map.jumpTo({ center: this.ll(0, 0), zoom: 15, pitch: ISO_PITCH, bearing: this.bearing });
+    this.targets = [{ key: 'cafe', role: 'cafe', x: map.cafe.x, y: map.cafe.y }];
+    // A new café: every colored building belongs to the old one.
+    this.painted.clear();
+    this.showPainted();
+    this.schedulePaint();
   }
 
   setRivals(rivals: { key: string; name: string; x: number; y: number; distanceM: number; weight: number }[], radiusM: number) {
@@ -274,7 +362,7 @@ export class TileScene {
       const miles = r.distanceM / 1609;
       const note = miles < 1 ? `${miles.toFixed(2)} mi` : `${miles.toFixed(1)} mi`;
       this.rivalMarkers.push(
-        new maplibregl.Marker({ element: pin('rival', r.name, note), anchor: 'bottom', offset: [0, -6] })
+        new maplibregl.Marker({ element: pin('rival', r.name, note), anchor: 'bottom', offset: [0, -24] })
           .setLngLat(this.ll(r.x, r.y))
           .addTo(this.map)
       );
@@ -290,6 +378,12 @@ export class TileScene {
       });
       this.drawRadius(radiusM);
     };
+    this.targets = [
+      ...this.targets.filter(t => t.role === 'cafe'),
+      ...rivals.map(r => ({ key: r.key, role: 'rival' as const, x: r.x, y: r.y })),
+    ];
+    this.unpaintStale();
+    this.schedulePaint();
     if (this.map.isStyleLoaded()) draw();
     else this.ready.then(draw);
     this.frame('radius');
@@ -353,10 +447,64 @@ export class TileScene {
 
   dispose() {
     this.alive = false;
+    if (this.paintTimer) clearTimeout(this.paintTimer);
     this.cafeMarker?.remove();
     for (const m of this.rivalMarkers) m.remove();
     this.map.remove();
   }
+}
+
+/** The drawn building containing (lng, lat), else the nearest one within 25 m: its footprint and height. */
+function buildingAt(
+  hits: maplibregl.MapGeoJSONFeature[],
+  lng: number,
+  lat: number,
+  mPerLng: number
+): { ring: [number, number][]; h: number; base: number } | null {
+  let near: { ring: [number, number][]; h: number; base: number; d: number } | null = null;
+  for (const f of hits) {
+    const g = f.geometry;
+    const polys = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
+    const h = Number(f.properties?.render_height ?? 8);
+    const base = Number(f.properties?.render_min_height ?? 0);
+    for (const poly of polys) {
+      const ring = poly[0] as [number, number][];
+      if (inRingLL(ring, lng, lat)) return { ring, h, base };
+      const [cx, cy] = centerLL(ring);
+      const d = Math.hypot((cx - lng) * mPerLng, (cy - lat) * 110540);
+      if (d < 25 && (!near || d < near.d)) near = { ring, h, base, d };
+    }
+  }
+  return near;
+}
+
+/** A building redrawn ~2% larger and 0.5 m taller, so it covers the map's own copy of it. */
+function paintedBuilding(role: 'cafe' | 'rival', ring: [number, number][], h: number, base: number): GeoJSON.Feature {
+  const [cx, cy] = centerLL(ring);
+  const grown = ring.map(([x, y]) => [cx + (x - cx) * 1.02, cy + (y - cy) * 1.02]);
+  return { type: 'Feature', properties: { role, h: h + 0.5, base }, geometry: { type: 'Polygon', coordinates: [grown] } };
+}
+
+// ---- Small geometry helpers ----------------------------------------------------------------
+
+/** Point in a ring of [lng, lat] pairs (map tiles). */
+function inRingLL(ring: [number, number][], lng: number, lat: number): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    if (yi > lat !== yj > lat && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+function centerLL(ring: [number, number][]): [number, number] {
+  let sx = 0, sy = 0;
+  for (const [x, y] of ring) {
+    sx += x;
+    sy += y;
+  }
+  return [sx / ring.length, sy / ring.length];
 }
 
 function pin(kind: 'cafe' | 'rival', name: string, note: string) {
