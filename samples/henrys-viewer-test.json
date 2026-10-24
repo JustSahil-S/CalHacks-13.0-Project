@@ -1,0 +1,11 @@
+{
+  "baseUniverseId": 33,
+  "label": "Drip coffee $2.75→$3.25",
+  "brain": "ai",
+  "copies": 10,
+  "days": 60,
+  "options": [
+    { "label": "no change", "prices": {} },
+    { "label": "price change", "prices": { "drip": 325 } }
+  ]
+}

@@ -1,0 +1,4 @@
+[
+  { "key": "drip", "name": "Drip coffee", "category": "coffee", "priceCents": 275 },
+  { "key": "beans", "name": "Bag of coffee beans", "category": "retail", "priceCents": 1600 }
+]

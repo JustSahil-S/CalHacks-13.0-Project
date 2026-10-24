@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fork</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,500;9..144,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="stage"></div>
+
+    <header class="masthead">
+      <div class="brand">
+        <span class="brand-mark">Fork</span>
+        <span class="brand-sub">rehearse a price change before you make it</span>
+      </div>
+      <label class="cafe-picker">
+        <span class="eyebrow">Café</span>
+        <select id="cafe-select"><option>Connecting…</option></select>
+      </label>
+      <div class="status" id="conn-status"><span class="dot"></span><span>connecting</span></div>
+    </header>
+
+    <aside class="dossier" id="dossier">
+      <section class="sheet" id="cafe-card">
+        <p class="eyebrow">The twin</p>
+        <h1 id="cafe-name">—</h1>
+        <p class="meta" id="cafe-meta"></p>
+        <dl class="facts" id="cafe-facts"></dl>
+      </section>
+
+      <section class="sheet" id="experiment-card">
+        <p class="eyebrow">Fork the future</p>
+        <div id="menu-editor" class="menu-editor"></div>
+        <div class="row">
+          <label>Copies <input id="copies" type="number" min="2" max="20" value="10" /></label>
+          <label>Days <input id="days" type="number" min="14" max="180" value="60" /></label>
+        </div>
+        <button class="primary" id="run-btn">Run 10 futures</button>
+        <p class="hint" id="run-hint">Change one or more prices, then run. Copy #1 of each option is animated.</p>
+      </section>
+
+      <section class="sheet" id="result-card" hidden>
+        <p class="eyebrow">Result</p>
+        <div id="result-body"></div>
+        <svg id="chart" viewBox="0 0 320 150" preserveAspectRatio="none"></svg>
+        <div class="legend" id="chart-legend"></div>
+      </section>
+
+      <section class="sheet" id="build-card">
+        <p class="eyebrow">Twin a real café</p>
+        <input id="build-query" placeholder="Google Maps link, or name + city" />
+        <textarea id="build-menu" rows="3" placeholder="Menu (optional). Leave empty and Claude reads it from their website, or estimates it. Or one per line: Latte, 5.50"></textarea>
+        <button id="build-btn">Build twin</button>
+        <ul class="builds" id="build-list"></ul>
+      </section>
+    </aside>
+
+    <aside class="inspector" id="inspector" hidden>
+      <button class="close" id="inspector-close" aria-label="Close">×</button>
+      <p class="eyebrow" id="insp-type"></p>
+      <h2 id="insp-name"></h2>
+      <dl class="facts" id="insp-facts"></dl>
+      <p class="eyebrow">Memories</p>
+      <ol class="memories" id="insp-memories"></ol>
+      <p class="eyebrow" id="insp-reviews-label">Reviews</p>
+      <ol class="memories" id="insp-reviews"></ol>
+    </aside>
+
+    <footer class="deck">
+      <div class="option-tabs" id="option-tabs"></div>
+      <button class="icon" id="play-btn" aria-label="Play">▶</button>
+      <div class="day">
+        <span class="eyebrow">Day</span>
+        <span class="day-num" id="day-num">0</span>
+        <span class="day-of" id="day-of">/ 0</span>
+      </div>
+      <input type="range" id="day-slider" min="0" max="0" value="0" />
+      <div class="speed" id="speed">
+        <button data-speed="0.5">½×</button><button data-speed="1" class="on">1×</button><button data-speed="4">4×</button>
+      </div>
+      <div class="tally" id="tally"></div>
+      <div class="rotate">
+        <button class="icon" id="rot-left" aria-label="Rotate left">⟲</button>
+        <button class="icon" id="rot-right" aria-label="Rotate right">⟳</button>
+      </div>
+    </footer>
+
+    <div class="toast" id="toast" hidden></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -16,6 +16,7 @@ export const universe = table(
     currentTick: t.u32(),
     maxTick: t.u32(),
     status: t.string(), // "paused" | "running" | "done"
+    brain: t.string(), // "ai" = Claude decides noticed changes, "rules" = formula only
   }
 );
 
@@ -81,6 +82,7 @@ export const agent = table(
     satisfaction: t.f64(), // rolling, 1..5
     lastNoticeTick: t.i32(), // -1 if never
     lastNoticePct: t.f64(), // size of the last price change they noticed (+0.08 = 8% up)
+    noticeReview: t.string(), // AI-written review for the last noticed change, used if they review soon
     visitsHere: t.u32(),
   }
 );
@@ -182,26 +184,173 @@ export const clockJob = table(
   }
 );
 
-// Spike leftovers, kept until the AI step replaces them.
-export const llmJob = table(
-  { name: 'llm_job' },
+// ---- AI brain ----------------------------------------------------------------
+
+// Claude's answer for one situation. Shared by every universe and copy that reaches the
+// same situation, so 10 copies usually cost one call per customer, not ten.
+// pHere < 0 means "no AI answer, use the rules brain".
+export const decisionCache = table(
+  { name: 'decision_cache', public: true },
   {
-    scheduledId: t.u64().primaryKey().autoInc(),
-    scheduledAt: t.scheduleAt(),
-    batch: t.string(),
-    prompt: t.string(),
+    situationKey: t.string().primaryKey(),
+    agentKey: t.string(),
+    pHere: t.f64(),
+    pCompetitor: t.f64(),
+    pSkip: t.f64(),
+    satisfaction: t.f64(),
+    memory: t.string(),
+    reviewText: t.string(),
+    source: t.string(), // "ai" | "fallback"
   }
 );
 
-export const llmResult = table(
-  { name: 'llm_result', public: true },
+// A situation waiting for Claude. Deleted once its answer is cached.
+export const decisionRequest = table(
+  { name: 'decision_request', public: true },
+  {
+    situationKey: t.string().primaryKey(),
+    agentKey: t.string(),
+    contextJson: t.string(),
+  }
+);
+
+// One Claude call for up to 10 situations; fires immediately.
+export const decisionJob = table(
+  { name: 'decision_job' },
+  {
+    scheduledId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
+    payloadJson: t.string(), // [{situationKey, context}]
+  }
+);
+
+// One row per Claude call: for debugging and watching the credit budget.
+export const llmLog = table(
+  { name: 'llm_log', public: true },
   {
     id: t.u64().primaryKey().autoInc(),
-    batch: t.string(),
     ok: t.bool(),
+    situations: t.u32(),
+    inputTokens: t.u32(),
+    outputTokens: t.u32(),
     startedMs: t.u64(),
     finishedMs: t.u64(),
-    output: t.string(),
+    note: t.string(),
+  }
+);
+
+// ---- Twin pipeline: Google Maps link -> real café twin, built inside the database --------
+
+// One build. A scheduled procedure moves it through:
+// queued -> place -> scraping -> profiling -> assembling -> done (or failed).
+export const twinBuild = table(
+  { name: 'twin_build', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    query: t.string(), // Google Maps URL, or "name, city"
+    label: t.string(),
+    cutoffDate: t.string(), // "" = use all reviews; "YYYY-MM-DD" = build only from reviews before it (backtest)
+    menuJson: t.string(), // menu passed in by the caller (keys, names, prices)
+    status: t.string(),
+    detail: t.string(), // human-readable progress or error
+    placeRunId: t.string(),
+    reviewsRunId: t.string(),
+    competitorsRunId: t.string(),
+    placeJson: t.string(),
+    reviewsJson: t.string(), // ALL scraped reviews [{date, stars, text}], before and after the cutoff
+    competitorsJson: t.string(),
+    batchesTotal: t.u32(),
+    batchesDone: t.u32(),
+    twinJson: t.string(),
+    universeId: t.u64(), // the loaded twin, once done
+  }
+);
+
+// Where a build's menu came from: read from their site/ordering page, from menu photos,
+// estimated, or provided by the caller (e.g. documented old prices for a backtest).
+export const menuSource = table(
+  { name: 'menu_source', public: true },
+  {
+    buildId: t.u64().primaryKey(),
+    status: t.string(), // "crawling" | "ready" | "none"
+    source: t.string(), // "website" | "menu photo" | "estimated" | "provided"
+    url: t.string(),
+    runId: t.string(),
+    detail: t.string(),
+  }
+);
+
+// Claude's reading of one real review (one reviewer -> one customer profile).
+export const twinProfile = table(
+  { name: 'twin_profile', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    buildId: t.u64().index('btree'),
+    reviewIndex: t.u32(),
+    profileJson: t.string(),
+  }
+);
+
+export const buildJob = table(
+  { name: 'build_job' },
+  {
+    scheduledId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
+    buildId: t.u64(),
+  }
+);
+
+export const profileJob = table(
+  { name: 'profile_job' },
+  {
+    scheduledId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
+    buildId: t.u64(),
+    payloadJson: t.string(), // {menu, reviews: [{i, stars, date, text}]}
+  }
+);
+
+// Identities allowed to run admin actions (builds, resets, clock). Join with claim_admin + ADMIN_KEY.
+export const admin = table({ name: 'admin', public: true }, { identity: t.identity().primaryKey() });
+
+// ---- Viewer support -----------------------------------------------------------------
+
+// Universes whose individual customer trips are recorded (the twin itself and copy #1 of each
+// experiment option). Logging every copy would be hundreds of thousands of rows.
+export const traced = table(
+  { name: 'traced', public: true },
+  { universeId: t.u64().primaryKey() }
+);
+
+// Who went where on which day, in traced universes. Customers with no row that day stayed home.
+export const visit = table(
+  { name: 'visit', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    universeId: t.u64().index('btree'),
+    tick: t.u32(),
+    agentKey: t.string(),
+    place: t.string(), // "here" | "competitor"
+  }
+);
+
+// The real neighborhood around a built café, from OpenStreetMap, in local meters.
+export const areaMap = table(
+  { name: 'area_map', public: true },
+  {
+    buildId: t.u64().primaryKey(),
+    status: t.string(), // "fetching" | "ready" | "failed"
+    detail: t.string(),
+    mapJson: t.string(),
+  }
+);
+
+export const mapJob = table(
+  { name: 'map_job' },
+  {
+    scheduledId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
+    buildId: t.u64(),
   }
 );
 
@@ -219,10 +368,28 @@ const spacetimedb = schema(
     experiment,
     experimentResult,
     clockJob,
-    llmJob,
-    llmResult,
+    decisionCache,
+    decisionRequest,
+    decisionJob,
+    llmLog,
+    twinBuild,
+    menuSource,
+    twinProfile,
+    buildJob,
+    profileJob,
+    traced,
+    visit,
+    areaMap,
+    mapJob,
+    admin,
   },
-  // Optional so the engine can publish and run on the rules brain without a key.
-  { env: { ANTHROPIC_API_KEY: t.option(t.string()) } }
+  // Optional so the engine can publish and run on the rules brain without keys.
+  {
+    env: {
+      ANTHROPIC_API_KEY: t.option(t.string()),
+      APIFY_TOKEN: t.option(t.string()),
+      ADMIN_KEY: t.option(t.string()),
+    },
+  }
 );
 export default spacetimedb;

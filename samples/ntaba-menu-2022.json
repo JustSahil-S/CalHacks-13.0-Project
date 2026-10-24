@@ -1,0 +1,4 @@
+[
+  { "key": "drip", "name": "Medium drip coffee", "category": "coffee", "priceCents": 300 },
+  { "key": "latte", "name": "Medium latte", "category": "coffee", "priceCents": 350 }
+]

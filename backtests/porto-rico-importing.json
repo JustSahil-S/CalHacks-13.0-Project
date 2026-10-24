@@ -1,0 +1,70 @@
+{
+  "buildId": 8,
+  "query": "Porto Rico Importing Co, 201 Bleecker St, New York",
+  "cutoff": "2025-03-03",
+  "newPrices": {
+    "latte": 520,
+    "beans": 1699
+  },
+  "windowDays": 180,
+  "copies": 10,
+  "realBefore": {
+    "reviews": 33,
+    "avgStars": 4.484848484848484,
+    "priceMentionShare": 0.25925925925925924
+  },
+  "realAfter": {
+    "reviews": 36,
+    "avgStars": 4.444444444444445,
+    "priceMentionShare": 0.15384615384615385
+  },
+  "rows": [
+    {
+      "metric": "average stars",
+      "real": -0.040404040404039776,
+      "simulated": -0.0416145759726918
+    },
+    {
+      "metric": "share of reviews mentioning price",
+      "real": -0.10541310541310539,
+      "simulated": 0.05182072829131653
+    },
+    {
+      "metric": "traffic (real: review count ratio; sim: visits ratio)",
+      "real": 0.09090909090909083,
+      "simulated": -0.07316196727595048
+    }
+  ],
+  "agree": 1,
+  "scored": 3,
+  "simulated": {
+    "control": {
+      "id": 8,
+      "experiment_id": 4,
+      "option_label": "control",
+      "copies": 10,
+      "mean_revenue_cents": 26280948,
+      "mean_profit_cents": -5007093,
+      "mean_visits": 16697.2,
+      "mean_stars": 4.377749029754204,
+      "price_mention_share": 0,
+      "revenue_wins": 0,
+      "profit_wins": 0,
+      "rating_drops": 0
+    },
+    "change": {
+      "id": 9,
+      "experiment_id": 4,
+      "option_label": "real change",
+      "copies": 10,
+      "mean_revenue_cents": 25851987,
+      "mean_profit_cents": -4852756,
+      "mean_visits": 15475.6,
+      "mean_stars": 4.336134453781512,
+      "price_mention_share": 0.05182072829131653,
+      "revenue_wins": 0,
+      "profit_wins": 10,
+      "rating_drops": 0
+    }
+  }
+}

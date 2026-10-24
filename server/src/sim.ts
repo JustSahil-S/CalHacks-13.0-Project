@@ -3,6 +3,7 @@
 import type { InferSchema, ReducerCtx } from 'spacetimedb/server';
 import spacetimedb from './schema';
 import { hash32, roll } from './rng';
+import { competitorSignature, orderPrice, situationKey } from './brain';
 
 export type Ctx = ReducerCtx<InferSchema<typeof spacetimedb>>;
 
@@ -43,11 +44,6 @@ export type PriceChanges = Record<string, number>; // menu item key -> new price
 
 const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
 
-function orderPrice(prices: Map<string, number>, usualOrder: string): number {
-  const keys: string[] = JSON.parse(usualOrder);
-  return keys.reduce((sum, k) => sum + (prices.get(k) ?? 0), 0);
-}
-
 function logEvent(
   ctx: Ctx,
   universeId: bigint,
@@ -73,6 +69,7 @@ export function loadTwin(ctx: Ctx, twin: TwinInput): bigint {
     currentTick: 0,
     maxTick: 0,
     status: 'paused',
+    brain: 'rules',
   });
   const c = twin.cafe;
   ctx.db.cafe.insert({
@@ -116,6 +113,7 @@ export function loadTwin(ctx: Ctx, twin: TwinInput): bigint {
       satisfaction: 4,
       lastNoticeTick: -1,
       lastNoticePct: 0,
+      noticeReview: '',
       visitsHere: 0,
     });
     for (const text of cu.seedMemories) {
@@ -123,6 +121,7 @@ export function loadTwin(ctx: Ctx, twin: TwinInput): bigint {
     }
   }
   logEvent(ctx, u.id, 0, 'twin_loaded', '', `${c.name}: ${twin.customers.length} customers`);
+  ctx.db.traced.insert({ universeId: u.id });
   return u.id;
 }
 
@@ -193,6 +192,8 @@ export function stepUniverse(ctx: Ctx, universeId: bigint) {
   }
   const scale = c.customerScale;
   const agents = [...ctx.db.agent.universeId.filter(universeId)];
+  const compSig = competitorSignature(ctx, universeId);
+  const isTraced = ctx.db.traced.universeId.find(universeId) !== null;
 
   // Pass 1: where does everyone go today?
   let hereCount = 0;
@@ -200,25 +201,34 @@ export function stepUniverse(ctx: Ctx, universeId: bigint) {
   let revenue = 0;
   let cogs = 0;
   let notices = 0;
-  const visitors: { a: (typeof agents)[number]; pricePct: number }[] = [];
+  const visitors: { a: (typeof agents)[number]; feltOverride: number | null }[] = [];
   for (const a of agents) {
     const r = roll(u.seed, tick, a.key, 'where');
     if (r < a.pHere) {
       const now = orderPrice(prices, a.usualOrder);
       let next = a;
-      let pricePct = 0;
+      let feltOverride: number | null = null;
       if (now !== a.refPriceCents) {
-        const shifted = noticePrice(a, a.refPriceCents, now);
-        pricePct = shifted.pct;
+        const pricePct = a.refPriceCents > 0 ? (now - a.refPriceCents) / a.refPriceCents : 0;
+        const row =
+          u.brain === 'ai'
+            ? ctx.db.decisionCache.situationKey.find(situationKey(a, now, compSig))
+            : null;
+        const ai = row && row.pHere >= 0 ? row : null; // null -> rules brain
+        const odds = ai
+          ? { pHere: ai.pHere, pCompetitor: ai.pCompetitor, pSkip: ai.pSkip }
+          : noticePrice(a, a.refPriceCents, now);
         next = {
           ...a,
-          pHere: shifted.pHere,
-          pCompetitor: shifted.pCompetitor,
-          pSkip: shifted.pSkip,
+          pHere: odds.pHere,
+          pCompetitor: odds.pCompetitor,
+          pSkip: odds.pSkip,
           refPriceCents: now,
           lastNoticeTick: tick,
           lastNoticePct: pricePct,
+          noticeReview: ai ? ai.reviewText : '',
         };
+        if (ai) feltOverride = ai.satisfaction;
         notices++;
         const dir = pricePct > 0 ? 'up' : 'down';
         ctx.db.memory.insert({
@@ -226,16 +236,27 @@ export function stepUniverse(ctx: Ctx, universeId: bigint) {
           universeId,
           agentKey: a.key,
           tick,
-          text: `My usual order went ${dir} from $${(a.refPriceCents / 100).toFixed(2)} to $${(now / 100).toFixed(2)}.`,
+          text: ai
+            ? ai.memory
+            : `My usual order went ${dir} from $${(a.refPriceCents / 100).toFixed(2)} to $${(now / 100).toFixed(2)}.`,
         });
-        logEvent(ctx, universeId, tick, 'notice_price', a.key, `${Math.round(pricePct * 100)}%`);
+        logEvent(
+          ctx,
+          universeId,
+          tick,
+          'notice_price',
+          a.key,
+          `${Math.round(pricePct * 100)}% (${ai ? 'ai' : 'rules'}): here ${odds.pHere.toFixed(2)}`
+        );
       }
       hereCount++;
+      if (isTraced) ctx.db.visit.insert({ id: 0n, universeId, tick, agentKey: a.key, place: 'here' });
       revenue += now * scale;
       cogs += orderPrice(costs, a.usualOrder) * scale;
-      visitors.push({ a: { ...next, visitsHere: next.visitsHere + 1 }, pricePct });
+      visitors.push({ a: { ...next, visitsHere: next.visitsHere + 1 }, feltOverride });
     } else if (r < a.pHere + a.pCompetitor) {
       competitorCount++;
+      if (isTraced) ctx.db.visit.insert({ id: 0n, universeId, tick, agentKey: a.key, place: 'competitor' });
     }
   }
 
@@ -248,14 +269,15 @@ export function stepUniverse(ctx: Ctx, universeId: bigint) {
   let reviews = 0;
   let starsSum = 0;
   let priceMentions = 0;
-  for (const { a } of visitors) {
+  for (const { a, feltOverride } of visitors) {
     // Annoyance at a price increase fades over two weeks.
     const sinceNotice = a.lastNoticeTick >= 0 ? tick - a.lastNoticeTick : Infinity;
     const recentIncrease = sinceNotice <= 14 && a.lastNoticePct > 0;
     const pricePain = recentIncrease
       ? a.lastNoticePct * a.priceSensitivity * 4 * (1 - sinceNotice / 15)
       : 0;
-    const felt = clamp(4.4 - 0.08 * Math.max(0, waitMin - 5) - pricePain, 1, 5);
+    const felt =
+      feltOverride ?? clamp(4.4 - 0.08 * Math.max(0, waitMin - 5) - pricePain, 1, 5);
     let next = { ...a, satisfaction: 0.75 * a.satisfaction + 0.25 * felt };
     if (felt < 3) {
       const moved = next.pHere * 0.06;
@@ -265,7 +287,9 @@ export function stepUniverse(ctx: Ctx, universeId: bigint) {
     if (roll(u.seed, tick, a.key, 'review') < 0.02) {
       const stars = clamp(Math.round(felt + (roll(u.seed, tick, a.key, 'stars') - 0.5)), 1, 5);
       const mentionsPrice = recentIncrease && felt < 4.3;
-      const text = mentionsPrice
+      const text = recentIncrease && a.noticeReview
+        ? a.noticeReview
+        : mentionsPrice
         ? 'Prices went up and it is starting to feel expensive for an everyday stop.'
         : stars >= 4
           ? 'Reliable as always, my usual order hit the spot.'
@@ -323,7 +347,8 @@ export function startExperiment(
   label: string,
   options: ExperimentOption[],
   copies: number,
-  days: number
+  days: number,
+  brain: string
 ): bigint {
   const base = ctx.db.universe.id.find(baseUniverseId);
   if (!base) throw new Error(`no universe ${baseUniverseId}`);
@@ -349,9 +374,11 @@ export function startExperiment(
         currentTick: base.currentTick,
         maxTick: base.currentTick + days,
         status: 'running',
+        brain,
       });
       copyWorld(ctx, baseUniverseId, u.id);
       applyPrices(ctx, u.id, option.prices, base.currentTick);
+      if (k === 1) ctx.db.traced.insert({ universeId: u.id }); // the copy the viewer animates
     }
   }
   return exp.id;

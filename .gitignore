@@ -1,5 +1,7 @@
-node_modules/
-.env
 *.log
+.admin-key
+.env
+.stdb-identity.json
 data/
+node_modules/
 server/dist/

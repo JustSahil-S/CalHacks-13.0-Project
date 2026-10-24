@@ -1,0 +1,4 @@
+[
+  { "key": "latte", "name": "Medium latte or cappuccino", "category": "coffee", "priceCents": 490 },
+  { "key": "beans", "name": "Coffee beans (1 lb)", "category": "retail", "priceCents": 1599 }
+]

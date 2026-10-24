@@ -1,19 +1,49 @@
-// Fork — SpacetimeDB module entry. Tables live in schema.ts, simulation logic in sim.ts.
+// Fork — SpacetimeDB module entry. Tables live in schema.ts, simulation logic in sim.ts,
+// the AI brain's caching and prompt in brain.ts.
 import { t, SenderError } from 'spacetimedb/server';
-import { ScheduleAt, TimeDuration } from 'spacetimedb';
-import spacetimedb, { clockJob, llmJob } from './schema';
+import { ScheduleAt } from 'spacetimedb';
+import spacetimedb, { buildJob, clockJob, decisionJob, mapJob, profileJob } from './schema';
+import { fetchAreaMap } from './areamap';
+import { callClaude } from './claude';
+import { advanceBuild, inspectMenuCrawl, profileBatch, SCAN } from './pipeline';
 import {
   applyPrices,
   loadTwin,
   maybeFinishExperiment,
   startExperiment,
   stepUniverse,
+  type Ctx,
   type ExperimentOption,
   type PriceChanges,
   type TwinInput,
 } from './sim';
+import { buildPrompt, decisionsReady, DECISIONS_SCHEMA, normalize, type Decision } from './brain';
 
 export default spacetimedb;
+
+const CLOCK_MS = 100n;
+
+/** Start the clock if it isn't running. The clock stops itself once nothing is left to run. */
+function ensureClock(ctx: Ctx) {
+  if ([...ctx.db.clockJob.iter()].length > 0) return;
+  ctx.db.clockJob.insert({ scheduledId: 0n, scheduledAt: ScheduleAt.interval(CLOCK_MS * 1000n) });
+}
+
+// ---- Access ---------------------------------------------------------------------------
+// Anyone can watch and run (limited) experiments. Builds, resets and the clock are admin-only.
+
+const isAdmin = (ctx: Ctx) => ctx.db.admin.identity.find(ctx.sender) !== null;
+
+function requireAdmin(ctx: Ctx) {
+  if (!isAdmin(ctx)) throw new SenderError('Only the Fork team can do that.');
+}
+
+/** Join the admin list with the secret ADMIN_KEY stored in this database's settings. */
+export const claim_admin = spacetimedb.reducer({ key: t.string() }, (ctx, { key }) => {
+  const want = ctx.env.ADMIN_KEY;
+  if (!want || key !== want) throw new SenderError('Wrong admin key.');
+  if (!isAdmin(ctx)) ctx.db.admin.insert({ identity: ctx.sender });
+});
 
 function parseJson<T>(raw: string, what: string): T {
   try {
@@ -26,6 +56,7 @@ function parseJson<T>(raw: string, what: string): T {
 // ---- Twins and universes ---------------------------------------------------
 
 export const load_twin = spacetimedb.reducer({ twinJson: t.string() }, (ctx, { twinJson }) => {
+  requireAdmin(ctx);
   const twin = parseJson<TwinInput>(twinJson, 'twinJson');
   if (!twin.cafe || !twin.menu?.length || !twin.customers?.length) {
     throw new SenderError('twin needs cafe, menu and customers');
@@ -37,13 +68,16 @@ export const load_twin = spacetimedb.reducer({ twinJson: t.string() }, (ctx, { t
 export const run_universe = spacetimedb.reducer(
   { universeId: t.u64(), days: t.u32() },
   (ctx, { universeId, days }) => {
+  requireAdmin(ctx);
     const u = ctx.db.universe.id.find(universeId);
     if (!u) throw new SenderError(`no universe ${universeId}`);
     ctx.db.universe.id.update({ ...u, status: 'running', maxTick: u.currentTick + days });
+    ensureClock(ctx);
   }
 );
 
 export const pause_universe = spacetimedb.reducer({ universeId: t.u64() }, (ctx, { universeId }) => {
+  requireAdmin(ctx);
   const u = ctx.db.universe.id.find(universeId);
   if (!u) throw new SenderError(`no universe ${universeId}`);
   ctx.db.universe.id.update({ ...u, status: 'paused' });
@@ -53,6 +87,7 @@ export const pause_universe = spacetimedb.reducer({ universeId: t.u64() }, (ctx,
 export const set_prices = spacetimedb.reducer(
   { universeId: t.u64(), pricesJson: t.string() },
   (ctx, { universeId, pricesJson }) => {
+  requireAdmin(ctx);
     const u = ctx.db.universe.id.find(universeId);
     if (!u) throw new SenderError(`no universe ${universeId}`);
     applyPrices(ctx, universeId, parseJson<PriceChanges>(pricesJson, 'pricesJson'), u.currentTick);
@@ -62,6 +97,7 @@ export const set_prices = spacetimedb.reducer(
 /**
  * Paired comparison. optionsJson: [{"label":"control","prices":{}},
  * {"label":"latte +50c","prices":{"oat_latte":600}}]. The first option is the control.
+ * brain: "ai" (Claude decides noticed changes) or "rules".
  */
 export const start_experiment = spacetimedb.reducer(
   {
@@ -70,18 +106,29 @@ export const start_experiment = spacetimedb.reducer(
     optionsJson: t.string(),
     copies: t.u32(),
     days: t.u32(),
+    brain: t.string(),
   },
-  (ctx, { baseUniverseId, label, optionsJson, copies, days }) => {
+  (ctx, { baseUniverseId, label, optionsJson, copies, days, brain }) => {
     const options = parseJson<ExperimentOption[]>(optionsJson, 'optionsJson');
     if (options.length < 2) throw new SenderError('need a control plus at least one option');
     if (copies < 1 || copies > 50) throw new SenderError('copies must be 1..50');
-    startExperiment(ctx, baseUniverseId, label, options, copies, days);
+    if (brain !== 'ai' && brain !== 'rules') throw new SenderError('brain must be "ai" or "rules"');
+    if (!isAdmin(ctx)) {
+      // Public demo limits: keep Claude spend small and the shared database responsive.
+      if (copies > 10 || days > 90) throw new SenderError('Demo limit: up to 10 copies and 90 days.');
+      if ([...ctx.db.experiment.iter()].some(e => e.status === 'running')) {
+        throw new SenderError('Another simulation is running. Try again in a minute.');
+      }
+    }
+    startExperiment(ctx, baseUniverseId, label, options, copies, days, brain);
+    ensureClock(ctx);
   }
 );
 
-// ---- The clock: every fire advances every running universe by one day ---------
+// ---- The clock: every fire advances every ready universe by one day ------------
 
 export const start_clock = spacetimedb.reducer({ everyMs: t.u32() }, (ctx, { everyMs }) => {
+  requireAdmin(ctx);
   for (const job of ctx.db.clockJob.iter()) ctx.db.clockJob.scheduledId.delete(job.scheduledId);
   ctx.db.clockJob.insert({
     scheduledId: 0n,
@@ -90,18 +137,28 @@ export const start_clock = spacetimedb.reducer({ everyMs: t.u32() }, (ctx, { eve
 });
 
 export const stop_clock = spacetimedb.reducer(ctx => {
+  requireAdmin(ctx);
   for (const job of ctx.db.clockJob.iter()) ctx.db.clockJob.scheduledId.delete(job.scheduledId);
 });
 
 export const clock = spacetimedb.reducer({ onSchedule: clockJob }, { job: clockJob.rowType }, ctx => {
   const running = [...ctx.db.universe.iter()].filter(u => u.status === 'running');
-  for (const u of running) stepUniverse(ctx, u.id);
+  for (const u of running) {
+    // AI universes wait until Claude has answered for everyone who notices a change tomorrow.
+    if (u.brain === 'ai' && !decisionsReady(ctx, u.id, u.seed, u.currentTick + 1)) continue;
+    stepUniverse(ctx, u.id);
+  }
   const experiments = new Set(running.map(u => u.experimentId).filter(id => id !== 0n));
   for (const id of experiments) maybeFinishExperiment(ctx, id);
+  // Nothing left to run: stop ticking (run_universe / start_experiment restart it).
+  if (![...ctx.db.universe.iter()].some(u => u.status === 'running')) {
+    for (const j of ctx.db.clockJob.iter()) ctx.db.clockJob.scheduledId.delete(j.scheduledId);
+  }
 });
 
-/** Dev helper: wipe every simulation table. */
+/** Dev helper: wipe every simulation table (keeps the decision cache unless asked). */
 export const reset_all = spacetimedb.reducer(ctx => {
+  requireAdmin(ctx);
   for (const r of ctx.db.universe.iter()) ctx.db.universe.id.delete(r.id);
   for (const r of ctx.db.cafe.iter()) ctx.db.cafe.universeId.delete(r.universeId);
   for (const r of ctx.db.menuItem.iter()) ctx.db.menuItem.id.delete(r.id);
@@ -113,87 +170,231 @@ export const reset_all = spacetimedb.reducer(ctx => {
   for (const r of ctx.db.event.iter()) ctx.db.event.id.delete(r.id);
   for (const r of ctx.db.experiment.iter()) ctx.db.experiment.id.delete(r.id);
   for (const r of ctx.db.experimentResult.iter()) ctx.db.experimentResult.id.delete(r.id);
+  for (const r of ctx.db.decisionRequest.iter()) ctx.db.decisionRequest.situationKey.delete(r.situationKey);
 });
 
-// ---- Spike: LLM call from a procedure (replaced by the AI brain next) ----------
+/** Forget cached AI answers: all of them, or only the rules fallbacks (to retry Claude). */
+export const clear_cache = spacetimedb.reducer({ onlyFallbacks: t.bool() }, (ctx, { onlyFallbacks }) => {
+  requireAdmin(ctx);
+  for (const r of ctx.db.decisionCache.iter()) {
+    if (!onlyFallbacks || r.source !== 'ai') ctx.db.decisionCache.situationKey.delete(r.situationKey);
+  }
+});
 
-const MODEL = 'claude-haiku-5-5';
-const EFFORT = 'low';
+// ---- Twin pipeline: Google Maps link -> real café twin --------------------------------
 
-const DECISION_SCHEMA = {
-  type: 'object',
-  properties: {
-    p_visit_here: { type: 'number' },
-    p_visit_competitor: { type: 'number' },
-    p_skip: { type: 'number' },
-    satisfaction_if_visit: { type: 'integer' },
-    memory: { type: 'string' },
-  },
-  required: ['p_visit_here', 'p_visit_competitor', 'p_skip', 'satisfaction_if_visit', 'memory'],
-  additionalProperties: false,
-};
-
-export const queue_llm = spacetimedb.reducer(
-  { batch: t.string(), count: t.u32(), prompt: t.string() },
-  (ctx, { batch, count, prompt }) => {
-    for (let i = 0; i < count; i++) {
-      ctx.db.llmJob.insert({
-        scheduledId: 0n,
-        scheduledAt: ScheduleAt.time(ctx.timestamp.microsSinceUnixEpoch),
-        batch,
-        prompt,
-      });
+/**
+ * query: a Google Maps URL or "name, city". menuJson: [{"key","name","priceCents",
+ * "category"?, "unitCostCents"?}]. cutoffDate: "" for a normal twin, or "YYYY-MM-DD" to build
+ * customers only from reviews before that date (backtest). label: display name ("" = Google's).
+ */
+export const start_twin_build = spacetimedb.reducer(
+  { query: t.string(), label: t.string(), menuJson: t.string(), cutoffDate: t.string() },
+  (ctx, { query, label, menuJson, cutoffDate }) => {
+  requireAdmin(ctx);
+    // An empty menu means "find it": read from their site/ordering page, else estimate.
+    const menu = parseJson<{ key: string; name: string; priceCents: number }[]>(menuJson || '[]', 'menuJson');
+    if (!Array.isArray(menu)) throw new SenderError('menuJson must be a list');
+    for (const m of menu) {
+      if (!m.key || !m.name || !(m.priceCents > 0)) throw new SenderError(`bad menu item ${JSON.stringify(m)}`);
     }
+    if (cutoffDate && !/^\d{4}-\d{2}-\d{2}$/.test(cutoffDate)) throw new SenderError('cutoffDate must be YYYY-MM-DD');
+    const b = ctx.db.twinBuild.insert({
+      id: 0n,
+      query,
+      label,
+      cutoffDate,
+      menuJson,
+      status: 'queued',
+      detail: 'Queued',
+      placeRunId: '',
+      reviewsRunId: '',
+      competitorsRunId: '',
+      placeJson: '',
+      reviewsJson: '',
+      competitorsJson: '',
+      batchesTotal: 0,
+      batchesDone: 0,
+      twinJson: '',
+      universeId: 0n,
+    });
+    ctx.db.buildJob.insert({
+      scheduledId: 0n,
+      scheduledAt: ScheduleAt.time(ctx.timestamp.microsSinceUnixEpoch),
+      buildId: b.id,
+    });
   }
 );
 
-export const think = spacetimedb.procedure(
-  { onSchedule: llmJob },
-  { job: llmJob.rowType },
+/** Scrape a café's reviews only (no customers), to look for price changes worth backtesting. */
+export const start_review_scan = spacetimedb.reducer({ query: t.string() }, (ctx, { query }) => {
+  requireAdmin(ctx);
+  const b = ctx.db.twinBuild.insert({
+    id: 0n,
+    query,
+    label: '',
+    cutoffDate: SCAN,
+    menuJson: '[]',
+    status: 'queued',
+    detail: 'Queued scan',
+    placeRunId: '',
+    reviewsRunId: '',
+    competitorsRunId: '',
+    placeJson: '',
+    reviewsJson: '',
+    competitorsJson: '',
+    batchesTotal: 0,
+    batchesDone: 0,
+    twinJson: '',
+    universeId: 0n,
+  });
+  ctx.db.buildJob.insert({ scheduledId: 0n, scheduledAt: ScheduleAt.time(ctx.timestamp.microsSinceUnixEpoch), buildId: b.id });
+});
+
+/** Start a failed build over from the beginning. */
+export const retry_build = spacetimedb.reducer({ buildId: t.u64() }, (ctx, { buildId }) => {
+  requireAdmin(ctx);
+  const b = ctx.db.twinBuild.id.find(buildId);
+  if (!b) throw new SenderError(`no build ${buildId}`);
+  if (b.status !== 'failed') throw new SenderError(`build ${buildId} is ${b.status}, not failed`);
+  ctx.db.twinBuild.id.update({
+    ...b,
+    status: 'queued',
+    detail: 'Retrying',
+    placeRunId: '',
+    reviewsRunId: '',
+    competitorsRunId: '',
+  });
+  ctx.db.buildJob.insert({ scheduledId: 0n, scheduledAt: ScheduleAt.time(ctx.timestamp.microsSinceUnixEpoch), buildId });
+});
+
+/** Rebuild a finished build's twin from its stored data (no new scraping or Claude calls). */
+export const reassemble_build = spacetimedb.reducer({ buildId: t.u64() }, (ctx, { buildId }) => {
+  requireAdmin(ctx);
+  const b = ctx.db.twinBuild.id.find(buildId);
+  if (!b || !b.placeJson) throw new SenderError(`build ${buildId} has no scraped data`);
+  ctx.db.twinBuild.id.update({ ...b, status: 'assembling', detail: 'Re-assembling from stored data' });
+  ctx.db.buildJob.insert({ scheduledId: 0n, scheduledAt: ScheduleAt.time(ctx.timestamp.microsSinceUnixEpoch), buildId });
+});
+
+/** (Re)fetch the OpenStreetMap neighborhood for a finished build. Runs automatically after a build. */
+export const fetch_area_map = spacetimedb.reducer({ buildId: t.u64() }, (ctx, { buildId }) => {
+  requireAdmin(ctx);
+  const b = ctx.db.twinBuild.id.find(buildId);
+  if (!b || !b.placeJson) throw new SenderError(`build ${buildId} has no place yet`);
+  ctx.db.mapJob.insert({ scheduledId: 0n, scheduledAt: ScheduleAt.time(ctx.timestamp.microsSinceUnixEpoch), buildId });
+});
+
+export const build_area_map = spacetimedb.procedure(
+  { onSchedule: mapJob },
+  { job: mapJob.rowType },
+  t.unit(),
+  (ctx, { job }) => {
+    const buildId = job.buildId;
+    const b = ctx.withTx(tx => tx.db.twinBuild.id.find(buildId));
+    if (!b || !b.placeJson) return {};
+    const save = (status: string, detail: string, mapJson: string) =>
+      ctx.withTx(tx => {
+        const row = { buildId, status, detail, mapJson };
+        if (tx.db.areaMap.buildId.find(buildId)) tx.db.areaMap.buildId.update(row);
+        else tx.db.areaMap.insert(row);
+      });
+    save('fetching', 'Fetching the neighborhood from OpenStreetMap', '');
+    try {
+      const map = fetchAreaMap(ctx, b.placeJson, b.competitorsJson);
+      save(
+        'ready',
+        `${map.buildings.length} buildings, ${map.roads.length} roads, ${Math.round(map.radius)} m radius`,
+        JSON.stringify(map)
+      );
+    } catch (e) {
+      save('failed', String(e).slice(0, 400), '');
+    }
+    return {};
+  }
+);
+
+/** Debug: summary of what a build's menu crawl saw (pages, text length, prices found, snippet). */
+export const inspect_menu_crawl = spacetimedb.procedure({ buildId: t.u64() }, t.string(), (ctx, { buildId }) =>
+  ctx.withTx(tx => tx.db.admin.identity.find(ctx.sender) !== null)
+    ? inspectMenuCrawl(ctx, buildId)
+    : JSON.stringify({ error: 'admin only' })
+);
+
+export const advance_build = spacetimedb.procedure(
+  { onSchedule: buildJob },
+  { job: buildJob.rowType },
+  t.unit(),
+  (ctx, { job }) => {
+    advanceBuild(ctx, job.buildId);
+    return {};
+  }
+);
+
+export const profile_batch = spacetimedb.procedure(
+  { onSchedule: profileJob },
+  { job: profileJob.rowType },
+  t.unit(),
+  (ctx, { job }) => {
+    profileBatch(ctx, job.buildId, job.payloadJson);
+    return {};
+  }
+);
+
+// ---- The AI brain: one Claude call per batch of up to 10 situations -------------
+
+interface JobItem {
+  situationKey: string;
+  context: { name: string; visitsPerWeek: number };
+}
+
+export const decide = spacetimedb.procedure(
+  { onSchedule: decisionJob },
+  { job: decisionJob.rowType },
   t.unit(),
   (ctx, { job }) => {
     const startedMs = ctx.timestamp.toMillis();
-    let ok = false;
-    let output = '';
-    const apiKey = ctx.env.ANTHROPIC_API_KEY;
-    try {
-      if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not set for this database');
-      const res = ctx.http.fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: MODEL,
-          max_tokens: 4000,
-          output_config: { effort: EFFORT, format: { type: 'json_schema', schema: DECISION_SCHEMA } },
-          messages: [{ role: 'user', content: job.prompt }],
-        }),
-        timeout: TimeDuration.fromMillis(90_000),
-      });
-      const body = res.json();
-      if (!res.ok) {
-        output = `HTTP ${res.status}: ${JSON.stringify(body?.error ?? body)}`;
-      } else if (body.stop_reason === 'refusal') {
-        output = `refused: ${JSON.stringify(body.stop_details)}`;
-      } else {
-        const text = body.content.find((b: any) => b.type === 'text')?.text;
-        ok = typeof text === 'string';
-        output = text ?? `no text block: ${JSON.stringify(body.content)}`;
+    const items: JobItem[] = JSON.parse(job.payloadJson);
+    const byId = new Map(items.map((item, i) => [`k${i + 1}`, item]));
+    const answers = new Map<string, Decision>();
+    const prompt = buildPrompt([...byId].map(([id, item]) => ({ id, context: item.context })));
+    const res = callClaude(ctx, prompt, DECISIONS_SCHEMA, 8000);
+    if (res.ok) {
+      for (const d of res.data.decisions ?? []) {
+        const item = byId.get(d.id);
+        if (item) answers.set(d.id, normalize(d, item.context.visitsPerWeek));
       }
-    } catch (e) {
-      output = `fetch failed: ${String(e)}`;
     }
+    const { ok, inputTokens, outputTokens } = res;
+    const note = ok ? `${answers.size}/${items.length} answered` : `${res.error} (rules brain used)`;
+
     ctx.withTx(tx => {
-      tx.db.llmResult.insert({
+      for (const [id, item] of byId) {
+        const d = answers.get(id);
+        if (!tx.db.decisionCache.situationKey.find(item.situationKey)) {
+          tx.db.decisionCache.insert({
+            situationKey: item.situationKey,
+            agentKey: item.situationKey.split('|')[0],
+            pHere: d ? d.pHere : -1,
+            pCompetitor: d ? d.pCompetitor : -1,
+            pSkip: d ? d.pSkip : -1,
+            satisfaction: d ? d.satisfaction : 0,
+            memory: d ? d.memory : '',
+            reviewText: d ? d.reviewText : '',
+            source: d ? 'ai' : 'fallback',
+          });
+        }
+        tx.db.decisionRequest.situationKey.delete(item.situationKey);
+      }
+      tx.db.llmLog.insert({
         id: 0n,
-        batch: job.batch,
         ok,
+        situations: items.length,
+        inputTokens,
+        outputTokens,
         startedMs,
         finishedMs: tx.timestamp.toMillis(),
-        output,
+        note,
       });
     });
     return {};
