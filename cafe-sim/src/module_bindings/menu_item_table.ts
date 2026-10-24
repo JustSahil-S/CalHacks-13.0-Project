@@ -23,4 +23,6 @@ export default __t.row({
   priceSource: __t.string().name("price_source"),
   confidence: __t.f64(),
   overridePriceCents: __t.option(__t.u32()).name("override_price_cents"),
+  photoPriceCents: __t.option(__t.u32()).name("photo_price_cents"),
+  photoDate: __t.string().name("photo_date"),
 });

@@ -111,6 +111,8 @@ export const MenuItem = __t.object("MenuItem", {
   priceSource: __t.string(),
   confidence: __t.f64(),
   overridePriceCents: __t.option(__t.u32()),
+  photoPriceCents: __t.option(__t.u32()),
+  photoDate: __t.string(),
 });
 export type MenuItem = __Infer<typeof MenuItem>;
 
@@ -125,6 +127,9 @@ export const MenuSource = __t.object("MenuSource", {
   markupBasis: __t.string(),
   priceIndex: __t.f64(),
   updatedAt: __t.timestamp(),
+  menuPhotos: __t.u32(),
+  photoItems: __t.u32(),
+  newestPhoto: __t.string(),
 });
 export type MenuSource = __Infer<typeof MenuSource>;
 

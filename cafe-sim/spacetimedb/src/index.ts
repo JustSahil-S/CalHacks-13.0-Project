@@ -167,7 +167,7 @@ const populate_job = table(
   }
 );
 
-// One menu item per store, merged from Uber Eats and the store's own website
+// One menu item per store, merged from Uber Eats, Google Maps menu photos and the store's own website
 const menu_item = table(
   { name: 'menu_item', public: true },
   {
@@ -182,12 +182,15 @@ const menu_item = table(
     website_price_cents: t.option(t.u32()),
     // Best estimate of the in-store price
     predicted_price_cents: t.u32(),
-    // website | uber_adjusted | area_estimate
+    // photo | photo_aged | website | uber_adjusted | area_estimate
     price_source: t.string(),
     // 0-1, how much the predicted price can be trusted
     confidence: t.f64(),
     // Set when the owner enters the real price; takes precedence over predicted_price_cents
     override_price_cents: t.option(t.u32()),
+    // Price read from a customer's menu photo on Google Maps, and that photo's upload date (YYYY-MM-DD)
+    photo_price_cents: t.option(t.u32()).default(undefined),
+    photo_date: t.string().default(''),
   }
 );
 
@@ -199,7 +202,7 @@ const menu_source = table(
     uber_url: t.string(),
     uber_items: t.u32(),
     website_url: t.string(),
-    // ok | no_website | no_prices | failed
+    // ok | no_website | no_prices | failed | skipped
     website_status: t.string(),
     website_items: t.u32(),
     // Uber Eats price divided by in-store price, used to convert Uber-only prices
@@ -209,6 +212,10 @@ const menu_source = table(
     // Median of this store's category prices relative to the area median (1 = typical)
     price_index: t.f64(),
     updated_at: t.timestamp(),
+    menu_photos: t.u32().default(0),
+    photo_items: t.u32().default(0),
+    // Upload date of the newest menu photo (YYYY-MM-DD), empty when there are none
+    newest_photo: t.string().default(''),
   }
 );
 
@@ -719,8 +726,9 @@ function callClaudeForJson(
       system,
       messages: [{ role: 'user', content }],
       output_config: { format: { type: 'json_schema', schema } },
-      // Sonnet can otherwise spend the whole token budget thinking before writing the JSON; Haiku rejects this option
-      ...(model === PERSONA_MODEL ? { thinking: { type: 'between_tools' } } : {}),
+      // Thinking can use up the token budget before the JSON is written, and roughly doubles the time.
+      // Sonnet only accepts between_tools for this; Haiku only accepts disabled.
+      thinking: { type: model === PERSONA_MODEL ? 'between_tools' : 'disabled' },
     }),
     timeout: CLAUDE_FETCH_TIMEOUT,
   });
@@ -1219,11 +1227,22 @@ const UBER_MATCH_METERS = 150;
 const UBER_SAME_PLACE_METERS = 40;
 const APIFY_CONCURRENT_RUNS = 5;
 const UBER_MAX_POLLS = 30;
-// Typical delivery-app markup, used only when no store has prices from both sources to measure it
-const DEFAULT_UBER_MARKUP = 1.2;
+// Delivery-app markup used only when no store has counter and Uber Eats prices to measure it.
+// Many small cafes charge the same on Uber Eats, so this is kept low.
+const DEFAULT_UBER_MARKUP = 1.1;
 const MIN_UBER_MARKUP = 1;
 const MAX_UBER_MARKUP = 1.6;
-const MIN_PAIRS_FOR_STORE_MARKUP = 3;
+const MIN_PAIRS_FOR_STORE_MARKUP = 2;
+const MENU_PHOTOS_ACTOR = 'solidcode~google-maps-photos-scraper';
+const MAX_MENU_PHOTOS_PER_STORE = 8;
+// Customer photos can be years old; older ones only fill gaps, with prices raised for their age
+const RECENT_PHOTO_MONTHS = 18;
+const DEFAULT_YEARLY_PRICE_GROWTH = 1.05;
+const MAX_YEARLY_PRICE_GROWTH = 1.15;
+const MIN_PAIRS_FOR_PRICE_GROWTH = 3;
+const MIN_STORES_FOR_AREA_GROWTH = 3;
+// Website reading is off for now; menu photos and Uber Eats cover more cafes
+const READ_STORE_WEBSITES = false;
 const MAX_ITEM_PRICE_CENTS = 10_000;
 const WEBSITE_FETCH_TIMEOUT = { __time_duration_micros__: 20n * 1_000_000n } as any;
 const MAX_MENU_PAGES = 4;
@@ -1283,7 +1302,15 @@ const ESTIMATED_CATEGORIES: Record<string, string> = {
   sandwich: 'Sandwich',
 };
 
-type RawMenuItem = { name: string; section: string; description: string; price_cents: number; category: string };
+type RawMenuItem = {
+  name: string;
+  section: string;
+  description: string;
+  price_cents: number;
+  category: string;
+  // Upload date of the menu photo the price was read from
+  photo_date?: string;
+};
 type StoreMenu = {
   store: Business;
   uber: RawMenuItem[];
@@ -1291,6 +1318,9 @@ type StoreMenu = {
   web: RawMenuItem[];
   website_url: string;
   website_status: string;
+  photos: RawMenuItem[];
+  menu_photos: number;
+  newest_photo: string;
 };
 type MenuItemRow = Omit<NonNullable<ReturnType<Tx['db']['menu_item']['item_id']['find']>>, 'item_id'>;
 type MenuSourceRow = Omit<NonNullable<ReturnType<Tx['db']['menu_source']['place_id']['find']>>, 'updated_at'>;
@@ -1377,7 +1407,8 @@ function uberEatsItems(result: ApifyPlace): RawMenuItem[] {
   for (const section of ordered) {
     for (const item of section.catalogItems ?? []) {
       const price = Math.round(Number(item.price));
-      const key = item.uuid ?? item.title;
+      // Stores often list the same item in several catalogs (e.g. "Hot Drinks" and "HOT DRINKS") under new ids
+      const key = [...nameTokens(item.title ?? '')].sort().join(' ') || item.uuid;
       if (!item.title || seen.has(key) || !(price > 0 && price <= MAX_ITEM_PRICE_CENTS)) continue;
       seen.add(key);
       const sectionName = section.catalogName ?? '';
@@ -1394,7 +1425,7 @@ function uberEatsItems(result: ApifyPlace): RawMenuItem[] {
 }
 
 // The Apify free plan allows only a few concurrent runs, so searches are started as earlier ones finish
-function uberEatsQueue(ctx: ProcedureCtx<Db>, menus: StoreMenu[]) {
+function uberEatsQueue(ctx: ProcedureCtx<Db>, menus: StoreMenu[], maxRuns: number) {
   const waiting = menus.map((_, i) => i);
   const active = new Map<number, ApifyRun>();
   const describe = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -1433,7 +1464,7 @@ function uberEatsQueue(ctx: ProcedureCtx<Db>, menus: StoreMenu[]) {
         console.warn(`Uber Eats run ${run.id} could not be checked: ${describe(error)}`);
       }
     }
-    while (active.size < APIFY_CONCURRENT_RUNS && waiting.length > 0) {
+    while (active.size < maxRuns && waiting.length > 0) {
       const i = waiting[0];
       try {
         active.set(i, startUberEatsSearch(ctx, menus[i].store));
@@ -1697,18 +1728,129 @@ function scrapeWebsiteMenu(ctx: ProcedureCtx<Db>, store: Business): { items: Raw
   return { items, status: items.length ? 'ok' : 'no_prices', url: website };
 }
 
+// ── Google Maps menu photos ─────────────────────────────────────────────────
+
+type MenuPhoto = { url: string; date: string };
+
+function startMenuPhotosRun(ctx: ProcedureCtx<Db>, stores: Business[]) {
+  return startApifyRun(ctx, MENU_PHOTOS_ACTOR, {
+    placeIds: stores.map(s => s.place_id),
+    photoCategories: ['menu'],
+    maxPhotosPerPlace: MAX_MENU_PHOTOS_PER_STORE,
+    imageSize: 'large',
+    concurrentPlaces: 4,
+  });
+}
+
+// Results are keyed by hex CID, but each one's url still contains the place ID we asked for
+function menuPhotosByPlace(results: ApifyPlace[]) {
+  const byPlace = new Map<string, MenuPhoto[]>();
+  for (const result of results) {
+    const placeId = /place_id:([^&]+)/.exec(result.url ?? '')?.[1];
+    if (!placeId) continue;
+    const photos: MenuPhoto[] = (result.photos ?? [])
+      .filter((p: ApifyPlace) => p.imageUrl)
+      .map((p: ApifyPlace) => ({ url: p.imageUrl, date: /^\d{4}-\d{2}-\d{2}/.exec(String(p.uploadDate ?? ''))?.[0] ?? '' }));
+    byPlace.set(placeId, photos.sort((a, b) => b.date.localeCompare(a.date)));
+  }
+  return byPlace;
+}
+
+const MENU_PHOTO_SYSTEM = `You read customer photos of a cafe or restaurant's menu, posted on Google Maps, and extract menu items with their prices.
+Skip photos that are not menus or price boards. When several sizes are listed, use the smallest or regular size. Ignore add-on charges (like +$0.75 oat milk).
+When the same item appears in more than one photo, return it once, with the price from the most recently uploaded photo and that photo's upload date.`;
+
+const MENU_PHOTO_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['items'],
+  properties: {
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name', 'section', 'price_dollars', 'photo_date'],
+        properties: {
+          name: { type: 'string' },
+          section: { type: 'string', description: 'menu heading the item is listed under, or empty' },
+          price_dollars: { type: 'number' },
+          photo_date: { type: 'string', description: 'upload date of the photo the price was read from' },
+        },
+      },
+    },
+  },
+};
+
+function readMenuPhotos(ctx: ProcedureCtx<Db>, store: Business, photos: MenuPhoto[]): RawMenuItem[] {
+  const prompt = { type: 'text', text: `Store: ${store.name} (${store.category}). Extract every menu item with a price.` };
+  const withPhotos = (image: (photo: MenuPhoto) => object | null) => {
+    const content: object[] = [];
+    for (const photo of photos) {
+      const block = image(photo);
+      if (block) content.push({ type: 'text', text: `Photo uploaded ${photo.date || 'on an unknown date'}:` }, block);
+    }
+    return content.length ? [...content, prompt] : null;
+  };
+  // Claude downloads the photos itself; if one can't be fetched, send them all inline instead
+  const attempts = [
+    () => withPhotos(photo => ({ type: 'image', source: { type: 'url', url: photo.url } })),
+    () => withPhotos(photo => fetchMenuFile(ctx, photo.url)),
+  ];
+  let extracted: any = null;
+  for (const attempt of attempts) {
+    const content = attempt();
+    if (!content) continue;
+    try {
+      extracted = callClaudeForJson(ctx, MENU_MODEL, MENU_PHOTO_SYSTEM, content, 12000, MENU_PHOTO_SCHEMA);
+      break;
+    } catch (error) {
+      console.warn(`Reading menu photos failed for ${store.name}: ${error instanceof Error ? error.message : error}`);
+    }
+  }
+
+  const dates = new Set(photos.map(p => p.date));
+  const newest = photos[0]?.date ?? '';
+  const byName = new Map<string, RawMenuItem>();
+  for (const item of extracted?.items ?? []) {
+    const price = Math.round(Number(item.price_dollars) * 100);
+    const name = String(item.name ?? '').trim();
+    if (!name || !(price > 0 && price <= MAX_ITEM_PRICE_CENTS)) continue;
+    const photoDate = dates.has(item.photo_date) ? String(item.photo_date) : newest;
+    const key = [...nameTokens(name)].sort().join(' ') || foldText(name);
+    const existing = byName.get(key);
+    if (existing && (existing.photo_date ?? '') >= photoDate) continue;
+    const section = String(item.section ?? '');
+    byName.set(key, {
+      name,
+      section,
+      description: '',
+      price_cents: price,
+      category: categorizeMenuItem(name, section),
+      photo_date: photoDate,
+    });
+  }
+  return [...byName.values()];
+}
+
+function photoAgeYears(date: string | undefined, nowMicros: bigint) {
+  const taken = Date.parse(`${date}T00:00:00Z`);
+  if (!date || !Number.isFinite(taken)) return null;
+  return Math.max(0, (Number(nowMicros / 1000n) - taken) / (365.25 * 24 * 3600 * 1000));
+}
+
 // ── Price prediction ─────────────────────────────────────────────────────────
 
-// Pairs website items with the same item on Uber Eats so the delivery-app markup can be measured
-function pairMenuItems(web: RawMenuItem[], uber: RawMenuItem[]) {
+// Pairs counter-price items with the same item on Uber Eats so the delivery-app markup can be measured
+function pairMenuItems(counter: RawMenuItem[], uber: RawMenuItem[]) {
   const used = new Set<number>();
-  const pairs: { web: RawMenuItem; uber: RawMenuItem }[] = [];
-  for (const webItem of web) {
+  const pairs: { counter: RawMenuItem; uber: RawMenuItem }[] = [];
+  for (const counterItem of counter) {
     let bestIndex = -1;
     let bestScore = 0.6;
     uber.forEach((uberItem, index) => {
-      if (used.has(index) || uberItem.category !== webItem.category) return;
-      const score = nameSimilarity(webItem.name, uberItem.name);
+      if (used.has(index) || uberItem.category !== counterItem.category) return;
+      const score = nameSimilarity(counterItem.name, uberItem.name);
       if (score >= bestScore) {
         bestScore = score;
         bestIndex = index;
@@ -1716,7 +1858,7 @@ function pairMenuItems(web: RawMenuItem[], uber: RawMenuItem[]) {
     });
     if (bestIndex >= 0) {
       used.add(bestIndex);
-      pairs.push({ web: webItem, uber: uber[bestIndex] });
+      pairs.push({ counter: counterItem, uber: uber[bestIndex] });
     }
   }
   return pairs;
@@ -1729,31 +1871,66 @@ function googlePriceLevel(price: string) {
   return range ? (Number(range[1]) + Number(range[2])) / 2 : null;
 }
 
-function predictMenus(menus: StoreMenu[]) {
-  // 1. Measure the Uber Eats markup per store, then for the area
-  const pairsByStore = new Map(menus.map(m => [m.store.place_id, pairMenuItems(m.web, m.uber)]));
+function predictMenus(menus: StoreMenu[], nowMicros: bigint) {
+  // 1. Counter prices come from the store's website and recent menu photos; older photos only fill gaps
+  const ageYears = (item: RawMenuItem) => photoAgeYears(item.photo_date, nowMicros);
+  const isRecent = (item: RawMenuItem) => (ageYears(item) ?? Infinity) * 12 <= RECENT_PHOTO_MONTHS;
+  const plans = menus.map(menu => {
+    const recentPhotos = menu.photos.filter(isRecent);
+    const photosOnWebsite = new Set(pairMenuItems(recentPhotos, menu.web).map(p => p.counter));
+    const counter = [...menu.web, ...recentPhotos.filter(p => !photosOnWebsite.has(p))];
+    const pairs = pairMenuItems(counter, menu.uber);
+    const pairedUber = new Set(pairs.map(p => p.uber));
+    const oldPairs = pairMenuItems(
+      menu.photos.filter(p => !isRecent(p)),
+      menu.uber.filter(u => !pairedUber.has(u))
+    );
+    return { menu, counter, pairs, oldPairs };
+  });
+
+  // 2. Measure the Uber Eats markup per store, then for the area
   const storeMarkups = new Map<string, number>();
-  for (const [placeId, pairs] of pairsByStore) {
-    const ratios = pairs.map(p => p.uber.price_cents / p.web.price_cents).filter(r => r >= 0.8 && r <= 2);
+  for (const { menu, pairs } of plans) {
+    const ratios = pairs.map(p => p.uber.price_cents / p.counter.price_cents).filter(r => r >= 0.8 && r <= 2);
     if (ratios.length >= MIN_PAIRS_FOR_STORE_MARKUP) {
-      storeMarkups.set(placeId, clamp(median(ratios), MIN_UBER_MARKUP, MAX_UBER_MARKUP, DEFAULT_UBER_MARKUP));
+      storeMarkups.set(menu.store.place_id, clamp(median(ratios), MIN_UBER_MARKUP, MAX_UBER_MARKUP, DEFAULT_UBER_MARKUP));
     }
   }
   const measuredAreaMarkup = median([...storeMarkups.values()]);
   const areaMarkup = measuredAreaMarkup ?? DEFAULT_UBER_MARKUP;
+  const markupFor = (placeId: string) => storeMarkups.get(placeId) ?? areaMarkup;
 
-  // 2. Merge both sources into predicted in-store prices
+  // 3. Measure how fast prices rose since old photos, by comparing them with today's Uber Eats prices
+  const storeGrowth = new Map<string, number>();
+  for (const { menu, oldPairs } of plans) {
+    const rates = oldPairs.flatMap(({ counter: old, uber }) => {
+      const years = ageYears(old);
+      if (!years || years < 1) return [];
+      return [(uber.price_cents / markupFor(menu.store.place_id) / old.price_cents) ** (1 / years)];
+    });
+    const usable = rates.filter(r => r >= 0.9 && r <= 1.5);
+    // Floored at the default: a stale Uber Eats listing, or one part of the menu that hasn't changed
+    // (e.g. brunch), makes old photos look current even when other prices have risen
+    if (usable.length >= MIN_PAIRS_FOR_PRICE_GROWTH) {
+      storeGrowth.set(
+        menu.store.place_id,
+        clamp(median(usable), DEFAULT_YEARLY_PRICE_GROWTH, MAX_YEARLY_PRICE_GROWTH, DEFAULT_YEARLY_PRICE_GROWTH)
+      );
+    }
+  }
+  const areaGrowth =
+    storeGrowth.size >= MIN_STORES_FOR_AREA_GROWTH ? median([...storeGrowth.values()])! : DEFAULT_YEARLY_PRICE_GROWTH;
+
+  // 4. Merge the sources into predicted in-store prices
   const items: MenuItemRow[] = [];
   const sources: MenuSourceRow[] = [];
-  for (const menu of menus) {
+  for (const { menu, counter, pairs, oldPairs } of plans) {
     const placeId = menu.store.place_id;
-    const pairs = pairsByStore.get(placeId)!;
     const storeMarkup = storeMarkups.get(placeId);
-    const markup = storeMarkup ?? areaMarkup;
+    const markup = markupFor(placeId);
     const markupBasis = storeMarkup ? 'store' : measuredAreaMarkup ? 'area' : 'default';
     const uberConfidence = storeMarkup ? 0.8 : measuredAreaMarkup ? 0.65 : 0.5;
-    const pairedWeb = new Set(pairs.map(p => p.web));
-    const pairedUber = new Set(pairs.map(p => p.uber));
+    const growth = storeGrowth.get(placeId) ?? areaGrowth;
     const row = (item: RawMenuItem, fields: Partial<MenuItemRow>): MenuItemRow => ({
       place_id: placeId,
       name: item.name,
@@ -1762,25 +1939,48 @@ function predictMenus(menus: StoreMenu[]) {
       description: item.description,
       uber_price_cents: undefined,
       website_price_cents: undefined,
+      photo_price_cents: undefined,
+      photo_date: '',
       predicted_price_cents: item.price_cents,
-      price_source: 'website',
-      confidence: 0.9,
+      price_source: item.photo_date !== undefined ? 'photo' : 'website',
+      confidence: item.photo_date !== undefined ? 0.85 : 0.9,
       override_price_cents: undefined,
       ...fields,
     });
-    for (const { web, uber } of pairs) {
-      items.push(row(web, { description: uber.description, uber_price_cents: uber.price_cents, website_price_cents: web.price_cents, confidence: 0.95 }));
+    const counterPrice = (item: RawMenuItem): Partial<MenuItemRow> =>
+      item.photo_date !== undefined
+        ? { photo_price_cents: item.price_cents, photo_date: item.photo_date }
+        : { website_price_cents: item.price_cents };
+    const uberAdjusted = (uber: RawMenuItem): Partial<MenuItemRow> => ({
+      description: uber.description,
+      uber_price_cents: uber.price_cents,
+      predicted_price_cents: roundToNickel(uber.price_cents / markup),
+      price_source: 'uber_adjusted',
+      confidence: uberConfidence,
+    });
+
+    const paired = new Set<RawMenuItem>();
+    for (const { counter: item, uber } of pairs) {
+      paired.add(item).add(uber);
+      items.push(row(item, { ...counterPrice(item), description: uber.description, uber_price_cents: uber.price_cents, confidence: 0.92 }));
     }
-    for (const web of menu.web) if (!pairedWeb.has(web)) items.push(row(web, { website_price_cents: web.price_cents }));
-    for (const uber of menu.uber) {
-      if (pairedUber.has(uber)) continue;
-      items.push(row(uber, {
-        uber_price_cents: uber.price_cents,
-        predicted_price_cents: roundToNickel(uber.price_cents / markup),
-        price_source: 'uber_adjusted',
-        confidence: uberConfidence,
+    for (const item of counter) if (!paired.has(item)) items.push(row(item, counterPrice(item)));
+    // Today's Uber Eats price beats an old photo; the photo price is kept for reference
+    for (const { counter: old, uber } of oldPairs) {
+      paired.add(old).add(uber);
+      items.push(row(uber, { ...uberAdjusted(uber), photo_price_cents: old.price_cents, photo_date: old.photo_date ?? '' }));
+    }
+    for (const uber of menu.uber) if (!paired.has(uber)) items.push(row(uber, uberAdjusted(uber)));
+    for (const old of menu.photos) {
+      if (isRecent(old) || paired.has(old)) continue;
+      items.push(row(old, {
+        ...counterPrice(old),
+        predicted_price_cents: roundToNickel(old.price_cents * growth ** (ageYears(old) ?? 0)),
+        price_source: 'photo_aged',
+        confidence: 0.45,
       }));
     }
+
     sources.push({
       place_id: placeId,
       uber_url: menu.uber_url,
@@ -1791,6 +1991,9 @@ function predictMenus(menus: StoreMenu[]) {
       uber_markup: menu.uber.length ? markup : 0,
       markup_basis: menu.uber.length ? markupBasis : 'none',
       price_index: 1,
+      menu_photos: menu.menu_photos,
+      photo_items: menu.photos.length,
+      newest_photo: menu.newest_photo,
     });
   }
 
@@ -1840,6 +2043,8 @@ function predictMenus(menus: StoreMenu[]) {
         description: '',
         uber_price_cents: undefined,
         website_price_cents: undefined,
+        photo_price_cents: undefined,
+        photo_date: '',
         predicted_price_cents: roundToNickel(areaPrice * factor),
         price_source: 'area_estimate',
         confidence: 0.3,
@@ -1852,21 +2057,37 @@ function predictMenus(menus: StoreMenu[]) {
 
 // Collects menus for the selected store and every competitor and predicts in-store prices
 export const fetch_menus = spacetimedb.procedure({}, t.u32(), ctx => {
-  const { running, stores } = ctx.withTx(tx => {
+  const { running, stores, previousUber } = ctx.withTx(tx => {
     const job = tx.db.populate_job.job_id.find(JOB_ID);
     const storeId = job?.place_id ?? '';
     const placeIds = [storeId, ...[...tx.db.competitor.place_id.filter(storeId)].map(c => c.competitor_place_id)];
+    // Uber Eats only shows the menu active right now (e.g. brunch), so earlier fetches fill in the rest
+    const previousUber = new Map<string, { url: string; items: RawMenuItem[] }>();
+    for (const placeId of placeIds) {
+      const items: RawMenuItem[] = [...tx.db.menu_item.place_id.filter(placeId)]
+        .filter(item => item.uber_price_cents !== undefined)
+        .map(item => ({
+          name: item.name,
+          section: item.section,
+          description: item.description,
+          price_cents: item.uber_price_cents!,
+          category: item.category,
+        }));
+      const url = tx.db.menu_source.place_id.find(placeId)?.uber_url ?? '';
+      if (items.length > 0) previousUber.set(placeId, { url, items });
+    }
     return {
       running:
         job?.status === 'running' &&
         tx.timestamp.microsSinceUnixEpoch - job.updated_at.microsSinceUnixEpoch < STALE_JOB_MICROS,
       stores: placeIds.map(id => tx.db.business.place_id.find(id)).filter((b): b is Business => !!b),
+      previousUber,
     };
   });
   if (running) throw new SenderError('Wait for the current run to finish');
   if (stores.length === 0) throw new SenderError('Populate a store first');
 
-  setJob(ctx, { status: 'running', message: `Searching Uber Eats for ${stores.length} stores...` });
+  setJob(ctx, { status: 'running', message: `Finding menu photos and Uber Eats menus for ${stores.length} stores...` });
   try {
     const menus: StoreMenu[] = stores.map(store => ({
       store,
@@ -1874,19 +2095,67 @@ export const fetch_menus = spacetimedb.procedure({}, t.u32(), ctx => {
       uber_url: '',
       web: [],
       website_url: store.website,
-      website_status: 'no_website',
+      website_status: READ_STORE_WEBSITES ? 'no_website' : 'skipped',
+      photos: [],
+      menu_photos: 0,
+      newest_photo: '',
     }));
-    const uber = uberEatsQueue(ctx, menus);
+    let photoRun: ApifyRun | null = null;
+    try {
+      photoRun = startMenuPhotosRun(ctx, stores);
+    } catch (error) {
+      console.warn(`Menu photo search failed to start: ${error instanceof Error ? error.message : error}`);
+    }
+    // The photo run holds one of the account's concurrent Apify runs
+    const uber = uberEatsQueue(ctx, menus, APIFY_CONCURRENT_RUNS - (photoRun ? 1 : 0));
+    uber.pump();
+
+    let photosByPlace = new Map<string, MenuPhoto[]>();
+    if (photoRun) {
+      for (let polls = 0; photoRun.status === 'READY' || photoRun.status === 'RUNNING'; polls++) {
+        if (polls >= UBER_MAX_POLLS) break;
+        photoRun = apifyRequest(ctx, `actor-runs/${photoRun.id}?waitForFinish=20`).data as ApifyRun;
+        uber.pump();
+      }
+      if (photoRun.status === 'SUCCEEDED') {
+        photosByPlace = menuPhotosByPlace(apifyRequest(ctx, `datasets/${photoRun.defaultDatasetId}/items?clean=true&format=json`));
+      } else {
+        console.warn(`Menu photo search ended with status ${photoRun.status}`);
+      }
+    }
 
     for (const [i, menu] of menus.entries()) {
       uber.pump();
-      setJob(ctx, { message: `Reading ${menu.store.name}'s website for prices (${i + 1} of ${menus.length})...` });
-      const web = scrapeWebsiteMenu(ctx, menu.store);
-      Object.assign(menu, { web: web.items, website_url: web.url, website_status: web.status });
+      const photos = photosByPlace.get(menu.store.place_id) ?? [];
+      if (photos.length > 0) {
+        setJob(ctx, { message: `Reading ${photos.length} menu photos for ${menu.store.name} (${i + 1} of ${menus.length})...` });
+        Object.assign(menu, {
+          photos: readMenuPhotos(ctx, menu.store, photos),
+          menu_photos: photos.length,
+          newest_photo: photos[0].date,
+        });
+      }
+      if (READ_STORE_WEBSITES) {
+        setJob(ctx, { message: `Reading ${menu.store.name}'s website for prices (${i + 1} of ${menus.length})...` });
+        const web = scrapeWebsiteMenu(ctx, menu.store);
+        Object.assign(menu, { web: web.items, website_url: web.url, website_status: web.status });
+      }
     }
     uber.finish(remaining => setJob(ctx, { message: `Collecting Uber Eats menus (${remaining} left)...` }));
+    for (const menu of menus) {
+      const previous = previousUber.get(menu.store.place_id);
+      if (!previous) continue;
+      const key = (item: RawMenuItem) => [...nameTokens(item.name)].sort().join(' ');
+      const seen = new Set(menu.uber.map(key));
+      for (const item of previous.items) {
+        if (seen.has(key(item))) continue;
+        seen.add(key(item));
+        menu.uber.push(item);
+      }
+      menu.uber_url ||= previous.url;
+    }
 
-    const { items, sources, areaMarkup, measuredAreaMarkup } = predictMenus(menus);
+    const { items, sources, areaMarkup, measuredAreaMarkup } = predictMenus(menus, ctx.timestamp.microsSinceUnixEpoch);
     ctx.withTx(tx => {
       for (const source of sources) {
         tx.db.menu_item.place_id.delete(source.place_id);
@@ -1897,14 +2166,20 @@ export const fetch_menus = spacetimedb.procedure({}, t.u32(), ctx => {
       for (const item of items) tx.db.menu_item.insert({ item_id: 0, ...item });
     });
 
+    const withPhotos = sources.filter(s => s.photo_items > 0).length;
     const withWebsite = sources.filter(s => s.website_items > 0).length;
     const withUber = sources.filter(s => s.uber_items > 0).length;
     const markupNote = measuredAreaMarkup
       ? `Uber Eats markup measured at ${Math.round((areaMarkup - 1) * 100)}%`
       : `Uber Eats markup assumed ${Math.round((areaMarkup - 1) * 100)}%`;
+    const found = [
+      `${withPhotos} from menu photos`,
+      ...(READ_STORE_WEBSITES ? [`${withWebsite} from websites`] : []),
+      `${withUber} from Uber Eats`,
+    ].join(', ');
     setJob(ctx, {
       status: 'done',
-      message: `Menus for ${stores.length} stores: ${withWebsite} from websites, ${withUber} from Uber Eats · ${items.length} items · ${markupNote}`,
+      message: `Menus for ${stores.length} stores: ${found} · ${items.length} items · ${markupNote}`,
     });
     return items.length;
   } catch (error) {

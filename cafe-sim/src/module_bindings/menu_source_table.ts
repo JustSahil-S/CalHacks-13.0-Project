@@ -21,4 +21,7 @@ export default __t.row({
   markupBasis: __t.string().name("markup_basis"),
   priceIndex: __t.f64().name("price_index"),
   updatedAt: __t.timestamp().name("updated_at"),
+  menuPhotos: __t.u32().name("menu_photos"),
+  photoItems: __t.u32().name("photo_items"),
+  newestPhoto: __t.string().name("newest_photo"),
 });

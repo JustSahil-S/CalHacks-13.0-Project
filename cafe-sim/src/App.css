@@ -213,8 +213,13 @@ tr.selected td {
   white-space: nowrap;
 }
 
-.source-badge.website {
+.source-badge.website,
+.source-badge.photo {
   background: rgba(22, 163, 74, 0.18);
+}
+
+.source-badge.photo_aged {
+  background: rgba(37, 99, 235, 0.18);
 }
 
 .source-badge.uber_adjusted {
