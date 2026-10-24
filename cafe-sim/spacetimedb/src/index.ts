@@ -248,10 +248,64 @@ const scenario_edit = table(
   }
 );
 
+// One simulated day of one universe (scenario_id 0 is the base universe). Day numbers line up across
+// universes, so day N of a scenario is compared with day N of the base.
+const sim_day = table(
+  { name: 'sim_day', public: true },
+  {
+    day_id: t.u32().primaryKey().autoInc(),
+    scenario_id: t.u32().index(),
+    day: t.u32(),
+    // YYYY-MM-DD
+    date: t.string(),
+    weekday: t.string(),
+    created_at: t.timestamp(),
+  }
+);
+
+// Expected results for one store on one simulated day
+const sim_store_day = table(
+  { name: 'sim_store_day', public: true },
+  {
+    row_id: t.u32().primaryKey().autoInc(),
+    day_id: t.u32().index(),
+    scenario_id: t.u32().index(),
+    place_id: t.string(),
+    customers: t.f64(),
+    revenue_cents: t.f64(),
+    // Ingredient cost of what was sold, from each item's real price
+    cost_cents: t.f64(),
+  }
+);
+
+// A store an agent might visit on a simulated day, and what they would order there
+const sim_visit = table(
+  { name: 'sim_visit', public: true },
+  {
+    visit_id: t.u32().primaryKey().autoInc(),
+    day_id: t.u32().index(),
+    scenario_id: t.u32().index(),
+    agent_id: t.u32(),
+    place_id: t.string(),
+    // 0-1 chance the agent makes this visit
+    chance: t.f64(),
+    // Real customers this visit stands for (the agent's group size times chance)
+    customers: t.f64(),
+    // Names of the items ordered
+    items_json: t.string(),
+    spend_cents: t.u32(),
+    cost_cents: t.u32(),
+    reason: t.string(),
+  }
+);
+
 const spacetimedb = schema(
   {
     scenario,
     scenario_edit,
+    sim_day,
+    sim_store_day,
+    sim_visit,
     user,
     message,
     business,
@@ -471,7 +525,14 @@ function setJob(ctx: ProcedureCtx<Db>, fields: Partial<Omit<NonNullable<ReturnTy
   });
 }
 
+function clearTimeline(tx: Tx) {
+  tx.db.sim_visit.clear();
+  tx.db.sim_store_day.clear();
+  tx.db.sim_day.clear();
+}
+
 function clearStoreData(tx: Tx) {
+  clearTimeline(tx);
   // Scenarios edit the selected store's menu, so they mean nothing once the store changes
   tx.db.scenario_edit.clear();
   tx.db.scenario.clear();
@@ -1060,6 +1121,8 @@ export const generate_all_agents = spacetimedb.procedure(
           PERSONA_BATCH_SCHEMA
         );
         created += ctx.withTx(tx => {
+          // Simulated days refer to the old agents
+          if (i === 0) clearTimeline(tx);
           let saved = 0;
           for (const store of group) {
             const result = (businesses ?? []).find((b: any) => b.place_id === store.place.place_id);
@@ -2283,6 +2346,7 @@ export const rename_scenario = spacetimedb.reducer({ scenario_id: t.u32(), name:
 
 export const delete_scenario = spacetimedb.reducer({ scenario_id: t.u32() }, (ctx, { scenario_id }) => {
   requireScenario(ctx, scenario_id);
+  deleteUniverseDays(ctx, scenario_id);
   ctx.db.scenario_edit.scenario_id.delete(scenario_id);
   ctx.db.scenario.scenario_id.delete(scenario_id);
 });
@@ -2372,6 +2436,425 @@ export const update_added_item = spacetimedb.reducer(
 export const revert_edit = spacetimedb.reducer({ edit_id: t.u32() }, (ctx, { edit_id }) => {
   if (!ctx.db.scenario_edit.edit_id.find(edit_id)) throw new SenderError(`No edit with id ${edit_id}`);
   ctx.db.scenario_edit.edit_id.delete(edit_id);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MARKET SIMULATION
+// ─────────────────────────────────────────────────────────────────────────────
+// Each simulated day, Claude sees every agent and every store's menu and estimates where each agent goes and
+// what they order. A scenario's day starts from the base universe's plans for that day and only changes the
+// customers its menu edits affect, so the difference between the two comes from the edits, not from sampling noise.
+const MARKET_MODEL = VOICE_MODEL;
+const MAX_DAYS_PER_RUN = 7;
+const MAX_VISITS_PER_AGENT = 2;
+const MAX_ITEMS_PER_VISIT = 4;
+const MARKET_TOKENS_PER_AGENT = 220;
+// Real customers per Google reviewer who decide where to go on a given day; turns each agent into a group of people
+const DAILY_CUSTOMERS_PER_REVIEWER = 0.4;
+// Ingredient cost as a share of an item's real price. Scenario price changes don't change what an item costs to make.
+const DRINK_COST_SHARE = 0.25;
+const FOOD_COST_SHARE = 0.32;
+const DRINK_CATEGORIES = new Set([
+  'matcha_latte', 'chai_latte', 'boba_milk_tea', 'mocha', 'cold_brew', 'cappuccino', 'flat_white', 'latte',
+  'americano', 'espresso', 'drip_coffee', 'specialty_coffee', 'tea', 'smoothie', 'juice', 'soda', 'alcohol', 'other_drink',
+]);
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const DAY_MILLIS = 86_400_000;
+
+type SimItem = { code: string; name: string; section: string; price_cents: number; real_price_cents: number | null; cost_cents: number };
+type SimStore = { code: string; place: Business; distance: number; items: SimItem[]; itemsByCode: Map<string, SimItem> };
+type SimVisit = NonNullable<ReturnType<Tx['db']['sim_visit']['visit_id']['find']>>;
+// One customer's plan for the day, in the shape Claude returns
+type Plan = { customer: string; visits: { store: string; chance: number; items: string[]; reason: string }[] };
+type Universe = {
+  scenario_id: number;
+  name: string;
+  stores: SimStore[];
+  // Base universe only: each agent's most likely visit the day before
+  yesterday: Map<number, string>;
+  // Scenarios only: the base universe's plans for the same day, and how the scenario's menu differs from the real one
+  baseline: Plan[];
+  changes: string[];
+};
+type MarketDay = { day: number; date: string; weekday: string; agents: Agent[]; places: Business[]; universeIds: number[] };
+
+function costShare(category: string) {
+  return DRINK_CATEGORIES.has(category) ? DRINK_COST_SHARE : FOOD_COST_SHARE;
+}
+
+function formatCents(cents: number) {
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
+// Item codes come from the base menu's order, so they are the same in every universe
+function simMenu(code: string, items: MenuItemRow[], edits: ScenarioEdit[]): SimItem[] {
+  const base = [...items].sort((a, b) =>
+    a.section !== b.section ? (a.section < b.section ? -1 : 1) : a.name < b.name ? -1 : a.name > b.name ? 1 : 0
+  );
+  const menu: SimItem[] = [];
+  base.forEach((item, index) => {
+    if (edits.some(e => e.kind === 'remove' && e.target_name === item.name)) return;
+    const price = item.override_price_cents ?? item.predicted_price_cents;
+    const changed = edits.find(e => e.kind === 'price' && e.target_name === item.name);
+    menu.push({
+      code: `${code}-${index + 1}`,
+      name: item.name,
+      section: item.section,
+      price_cents: changed?.price_cents ?? price,
+      real_price_cents: changed ? price : null,
+      cost_cents: Math.round(price * costShare(item.category)),
+    });
+  });
+  edits
+    .filter(e => e.kind === 'add')
+    .forEach((edit, index) =>
+      menu.push({
+        code: `${code}-${base.length + index + 1}`,
+        name: edit.name,
+        section: edit.section,
+        price_cents: edit.price_cents,
+        real_price_cents: null,
+        cost_cents: Math.round(edit.price_cents * costShare(edit.category)),
+      })
+    );
+  return menu;
+}
+
+function jobRunning(tx: Tx) {
+  const job = tx.db.populate_job.job_id.find(JOB_ID);
+  return (
+    job?.status === 'running' && tx.timestamp.microsSinceUnixEpoch - job.updated_at.microsSinceUnixEpoch < STALE_JOB_MICROS
+  );
+}
+
+function deleteUniverseDays(tx: Tx, scenario_id: number) {
+  tx.db.sim_visit.scenario_id.delete(scenario_id);
+  tx.db.sim_store_day.scenario_id.delete(scenario_id);
+  tx.db.sim_day.scenario_id.delete(scenario_id);
+}
+
+// Everything needed to simulate the next day of `scenario_id`, plus the base universe when it hasn't reached that day yet
+function loadMarket(tx: Tx, scenario_id: number): MarketDay {
+  const storeId = tx.db.populate_job.job_id.find(JOB_ID)?.place_id ?? '';
+  const home = tx.db.business.place_id.find(storeId);
+  if (!home) throw new SenderError('Populate a store first');
+  const places = [
+    home,
+    ...[...tx.db.competitor.place_id.filter(storeId)]
+      .sort((a, b) => a.distance_meters - b.distance_meters)
+      .map(c => tx.db.business.place_id.find(c.competitor_place_id))
+      .filter((b): b is Business => !!b),
+  ];
+  const agents = places.flatMap(p => [...tx.db.customer_agent.place_id.filter(p.place_id)]);
+  if (agents.length === 0) throw new SenderError('Create customer agents first');
+
+  const daysOf = (id: number) => [...tx.db.sim_day.scenario_id.filter(id)];
+  const day = Math.max(0, ...daysOf(scenario_id).map(d => d.day)) + 1;
+  const baseDays = daysOf(0);
+  const universeIds = scenario_id === 0 ? [0] : baseDays.some(d => d.day === day) ? [scenario_id] : [0, scenario_id];
+
+  const firstDay = baseDays.find(d => d.day === 1);
+  const startMillis = firstDay
+    ? Date.parse(`${firstDay.date}T12:00:00Z`)
+    : Number(tx.timestamp.microsSinceUnixEpoch / 1000n);
+  const date = new Date(startMillis + (day - 1) * DAY_MILLIS);
+  return { day, date: date.toISOString().slice(0, 10), weekday: WEEKDAYS[date.getUTCDay()], agents, places, universeIds };
+}
+
+function visitsByAgent(tx: Tx, scenario_id: number, day: number) {
+  const simDay = [...tx.db.sim_day.scenario_id.filter(scenario_id)].find(d => d.day === day);
+  const visits = new Map<number, SimVisit[]>();
+  if (!simDay) return visits;
+  for (const visit of [...tx.db.sim_visit.day_id.filter(simDay.day_id)].sort((a, b) => b.chance - a.chance)) {
+    visits.set(visit.agent_id, [...(visits.get(visit.agent_id) ?? []), visit]);
+  }
+  return visits;
+}
+
+// A scenario's day starts from the base universe's plans for the same day, so it must be loaded after the base day is saved
+function loadUniverse(tx: Tx, market: MarketDay, scenario_id: number): Universe {
+  const [home] = market.places;
+  const edits =
+    scenario_id === 0 ? [] : [...tx.db.scenario_edit.scenario_id.filter(scenario_id)].sort((a, b) => a.edit_id - b.edit_id);
+  const realMenus = new Map<string, SimItem[]>();
+  const stores = market.places.map((place, index): SimStore => {
+    const code = `s${index + 1}`;
+    const menuItems = [...tx.db.menu_item.place_id.filter(place.place_id)];
+    realMenus.set(place.place_id, simMenu(code, menuItems, []));
+    const items = index === 0 ? simMenu(code, menuItems, edits) : realMenus.get(place.place_id)!;
+    return {
+      code,
+      place,
+      distance: distanceMeters(home.latitude, home.longitude, place.latitude, place.longitude),
+      items,
+      itemsByCode: new Map(items.map(i => [i.code, i])),
+    };
+  });
+  const codeOf = new Map(stores.map(s => [s.place.place_id, s.code]));
+  const name = scenario_id === 0 ? 'the base universe' : tx.db.scenario.scenario_id.find(scenario_id)?.name ?? `scenario ${scenario_id}`;
+
+  if (scenario_id === 0) {
+    const yesterday = new Map<number, string>();
+    for (const [agent_id, [visit]] of visitsByAgent(tx, 0, market.day - 1)) {
+      const items = JSON.parse(visit.items_json) as string[];
+      yesterday.set(agent_id, `most likely went to ${codeOf.get(visit.place_id)} for ${items.join(', ')}`);
+    }
+    return { scenario_id, name, stores, yesterday, baseline: [], changes: [] };
+  }
+
+  // Base plans are stored by item name; map them back to codes on the real menu
+  const basePlans = visitsByAgent(tx, 0, market.day);
+  const baseline = market.agents.map((agent, index): Plan => ({
+    customer: `a${index + 1}`,
+    visits: (basePlans.get(agent.agent_id) ?? []).map(visit => {
+      const menu = realMenus.get(visit.place_id) ?? [];
+      const names = JSON.parse(visit.items_json) as string[];
+      return {
+        store: codeOf.get(visit.place_id) ?? '',
+        chance: visit.chance,
+        items: names.map(n => menu.find(i => i.name === n)?.code ?? '').filter(Boolean),
+        reason: visit.reason,
+      };
+    }),
+  }));
+
+  const realHome = realMenus.get(home.place_id)!;
+  const ownMenu = stores[0].items;
+  const changes = [
+    ...ownMenu
+      .filter(i => i.real_price_cents !== null)
+      .map(i => `${i.code} ${i.name}: now ${formatCents(i.price_cents)}, was ${formatCents(i.real_price_cents!)}`),
+    ...realHome.filter(i => !stores[0].itemsByCode.has(i.code)).map(i => `${i.code} ${i.name}: removed from the menu`),
+    ...ownMenu
+      .filter(i => !realHome.some(r => r.code === i.code))
+      .map(i => `${i.code} ${i.name}: new item, ${formatCents(i.price_cents)}`),
+  ];
+  return { scenario_id, name, stores, yesterday: new Map(), baseline, changes };
+}
+
+const MARKET_SYSTEM = `You simulate one day of customers choosing between nearby cafes. Each customer is a persona built from real Google reviews and stands for a group of similar people.
+For every customer, estimate the chance (0 to 1) that they visit each store today and what they would order on that visit, using only item codes from that store's menu. List at most ${MAX_VISITS_PER_AGENT} stores per customer. The chances must add up to at most 1; the rest is the chance they visit none of these stores today.
+Base it on the persona's habits and regular store, what they care about, the day of the week, the distance and the prices. Price-sensitive customers compare prices for similar items across stores and notice price changes; they may switch stores, order less, or stay home. Order what this person really would on one visit, usually 1 to 3 items.
+Return every customer exactly once. Keep each reason under 15 words.`;
+
+const SCENARIO_MARKET_SYSTEM = `You simulate how cafe customers react when store s1 changes its menu. Each customer is a persona built from real Google reviews and stands for a group of similar people.
+You get every store's menu as it is today, each customer's baseline plan for today (made with s1's usual menu), and the list of changes s1 has made.
+Return an updated plan only for customers who would act differently because of these changes: visit s1 more or less often, switch stores, or order something else or less. A plan gives the chance (0 to 1) of visiting each store today and what they would order there, using only item codes from that store's menu, with at most ${MAX_VISITS_PER_AGENT} stores and chances adding up to at most 1. You must return every customer whose baseline order includes an item that was removed.
+Everyone you don't return keeps their baseline plan and pays s1's new prices. Most people don't notice or care about small changes, so only change a plan when this kind of person really would. A price change mainly affects customers who order that item or a close substitute; leave customers who order other things alone unless the change makes the whole store feel much cheaper or pricier to them. Price-sensitive customers react more to price increases, and a price cut can win customers from other stores. New items only matter to customers who would want them. Return an empty list if nobody is affected. Keep each reason under 15 words and about the change.`;
+
+const MARKET_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['customers'],
+  properties: {
+    customers: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['customer', 'visits'],
+        properties: {
+          customer: { type: 'string', description: 'customer code, e.g. a1' },
+          visits: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['store', 'chance', 'items', 'reason'],
+              properties: {
+                store: { type: 'string', description: 'store code, e.g. s2' },
+                chance: { type: 'number', description: '0 to 1' },
+                items: { type: 'array', items: { type: 'string' }, description: 'item codes from that store, e.g. s2-14' },
+                reason: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+};
+
+function marketPrompt(market: MarketDay, universe: Universe) {
+  const [home] = universe.stores;
+  const codeOf = new Map(universe.stores.map(s => [s.place.place_id, s.code]));
+  const stores = universe.stores.map(store => {
+    const { place } = store;
+    const header = `${store.code} ${place.name} (${place.category}, ${place.rating} stars from ${place.reviews_count} reviews${
+      place.price ? `, ${place.price}` : ''
+    }, ${Math.round(store.distance)} m from ${home.code})`;
+    const sections = new Map<string, string[]>();
+    for (const item of store.items) {
+      const was = item.real_price_cents === null ? '' : ` (was ${formatCents(item.real_price_cents)})`;
+      const section = item.section || 'Menu';
+      sections.set(section, [...(sections.get(section) ?? []), `${item.code} ${item.name} ${formatCents(item.price_cents)}${was}`]);
+    }
+    return [header, ...[...sections].map(([section, items]) => `  ${section}: ${items.join('; ')}`)].join('\n');
+  });
+  const customers = market.agents.map((agent, index) => {
+    const yesterday = universe.yesterday.get(agent.agent_id);
+    return [
+      `a${index + 1} ${agent.name}, ${agent.archetype}, regular at ${codeOf.get(agent.place_id)}. ${agent.backstory}`,
+      `Usually orders: ${agent.typical_order}.`,
+      `Price sensitivity ${agent.price_sensitivity.toFixed(1)} of 1; cares about food ${agent.food_weight.toFixed(1)}, service ${agent.service_weight.toFixed(1)}, atmosphere ${agent.atmosphere_weight.toFixed(1)}.`,
+      yesterday ? `Yesterday they ${yesterday}.` : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+  });
+  const prompt = `Today is ${market.weekday}, ${market.date}.\n\nSTORES\n${stores.join('\n')}\n\nCUSTOMERS\n${customers.join('\n')}`;
+  if (universe.scenario_id === 0) return prompt;
+
+  const baseline = universe.baseline.map(plan => {
+    const visits = plan.visits.map(
+      v => `${v.store} ${Math.round(v.chance * 100)}% (${v.items.join(', ')}): ${v.reason}`
+    );
+    return `${plan.customer}: ${visits.length ? visits.join('; ') : 'not visiting any of these stores'}`;
+  });
+  return `${prompt}\n\nBASELINE PLANS FOR TODAY\n${baseline.join('\n')}\n\nCHANGES AT ${home.code}\n${universe.changes.join('\n')}`;
+}
+
+// Customers Claude returned replace their baseline plan; everyone else keeps it
+function mergePlans(baseline: Plan[], changed: unknown): Plan[] {
+  const updates = new Map<string, Plan>();
+  for (const plan of Array.isArray(changed) ? changed : []) {
+    const customer = String(plan?.customer ?? '').trim();
+    if (customer && !updates.has(customer)) updates.set(customer, plan);
+  }
+  return baseline.map(plan => updates.get(plan.customer) ?? plan);
+}
+
+function saveMarketDay(tx: Tx, market: MarketDay, universe: Universe, reply: any) {
+  const { scenario_id } = universe;
+  if ([...tx.db.sim_day.scenario_id.filter(scenario_id)].some(d => d.day === market.day)) return;
+  const { day_id } = tx.db.sim_day.insert({
+    day_id: 0,
+    scenario_id,
+    day: market.day,
+    date: market.date,
+    weekday: market.weekday,
+    created_at: tx.timestamp,
+  });
+
+  const totals = new Map(universe.stores.map(s => [s.place.place_id, { customers: 0, revenue: 0, cost: 0 }]));
+  const storesByCode = new Map(universe.stores.map(s => [s.code, s]));
+  const seen = new Set<number>();
+  for (const entry of Array.isArray(reply?.customers) ? reply.customers : []) {
+    const agent = market.agents[Number(String(entry.customer).replace(/\D/g, '')) - 1];
+    if (!agent || seen.has(agent.agent_id)) continue;
+    seen.add(agent.agent_id);
+    const visits = (Array.isArray(entry.visits) ? entry.visits : [])
+      .slice(0, MAX_VISITS_PER_AGENT)
+      .map((visit: any) => {
+        const store = storesByCode.get(String(visit.store).trim());
+        if (!store) return null;
+        const items = (Array.isArray(visit.items) ? visit.items : [])
+          .map((code: unknown) => store.itemsByCode.get(String(code).trim()))
+          .filter((item: SimItem | undefined): item is SimItem => !!item)
+          .slice(0, MAX_ITEMS_PER_VISIT);
+        if (items.length === 0) return null;
+        return { store, items, chance: clamp(visit.chance, 0, 1, 0), reason: String(visit.reason ?? '') };
+      })
+      .filter(Boolean) as { store: SimStore; items: SimItem[]; chance: number; reason: string }[];
+
+    const totalChance = visits.reduce((sum, v) => sum + v.chance, 0);
+    const scale = totalChance > 1 ? 1 / totalChance : 1;
+    const group = agent.represents_customers * DAILY_CUSTOMERS_PER_REVIEWER;
+    for (const visit of visits) {
+      const chance = visit.chance * scale;
+      if (chance <= 0) continue;
+      const spend = visit.items.reduce((sum, i) => sum + i.price_cents, 0);
+      const cost = visit.items.reduce((sum, i) => sum + i.cost_cents, 0);
+      const customers = group * chance;
+      tx.db.sim_visit.insert({
+        visit_id: 0,
+        day_id,
+        scenario_id,
+        agent_id: agent.agent_id,
+        place_id: visit.store.place.place_id,
+        chance,
+        customers,
+        items_json: JSON.stringify(visit.items.map(i => i.name)),
+        spend_cents: spend,
+        cost_cents: cost,
+        reason: visit.reason,
+      });
+      const total = totals.get(visit.store.place.place_id)!;
+      total.customers += customers;
+      total.revenue += customers * spend;
+      total.cost += customers * cost;
+    }
+  }
+
+  for (const [place_id, total] of totals) {
+    tx.db.sim_store_day.insert({
+      row_id: 0,
+      day_id,
+      scenario_id,
+      place_id,
+      customers: total.customers,
+      revenue_cents: total.revenue,
+      cost_cents: total.cost,
+    });
+  }
+}
+
+// Simulates the next `days` days of a universe (0 for the base). A scenario's days are always compared with the
+// base's days of the same number, so the base is simulated alongside it whenever it is behind.
+export const simulate_days = spacetimedb.procedure(
+  { scenario_id: t.u32(), days: t.u32() },
+  t.u32(),
+  (ctx, { scenario_id, days }) => {
+    if (days < 1 || days > MAX_DAYS_PER_RUN) {
+      throw new SenderError(`Simulate between 1 and ${MAX_DAYS_PER_RUN} days at a time`);
+    }
+    const running = ctx.withTx(tx => {
+      if (scenario_id !== 0) requireScenario(tx, scenario_id);
+      return jobRunning(tx);
+    });
+    if (running) throw new SenderError('Wait for the current run to finish');
+
+    setJob(ctx, { status: 'running', message: 'Starting the simulation...' });
+    try {
+      for (let i = 0; i < days; i++) {
+        const market = ctx.withTx(tx => loadMarket(tx, scenario_id));
+        for (const id of market.universeIds) {
+          const universe = ctx.withTx(tx => loadUniverse(tx, market, id));
+          let customers: unknown = universe.baseline;
+          if (id === 0 || universe.changes.length > 0) {
+            setJob(ctx, {
+              message:
+                id === 0
+                  ? `Simulating day ${market.day} (${market.weekday}) in the base universe: ${market.agents.length} customers are choosing where to go...`
+                  : `Simulating day ${market.day} (${market.weekday}) in ${universe.name}: customers are reacting to your menu changes...`,
+            });
+            const reply = callClaudeForJson(
+              ctx,
+              MARKET_MODEL,
+              id === 0 ? MARKET_SYSTEM : SCENARIO_MARKET_SYSTEM,
+              marketPrompt(market, universe),
+              600 + market.agents.length * MARKET_TOKENS_PER_AGENT,
+              MARKET_SCHEMA
+            );
+            customers = id === 0 ? reply.customers : mergePlans(universe.baseline, reply.customers);
+          }
+          ctx.withTx(tx => saveMarketDay(tx, market, universe, { customers }));
+        }
+      }
+      setJob(ctx, { status: 'done', message: `Simulated ${days} day${days === 1 ? '' : 's'}` });
+      return days;
+    } catch (error) {
+      setJob(ctx, { status: 'error', message: error instanceof Error ? error.message : String(error) });
+      throw error;
+    }
+  }
+);
+
+// Clearing the base clears every scenario too, since scenarios are compared with the base day by day
+export const reset_timeline = spacetimedb.reducer({ scenario_id: t.u32() }, (ctx, { scenario_id }) => {
+  if (jobRunning(ctx)) throw new SenderError('Wait for the current run to finish');
+  if (scenario_id === 0) clearTimeline(ctx);
+  else deleteUniverseDays(ctx, scenario_id);
 });
 
 function validateName(name: string) {

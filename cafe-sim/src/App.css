@@ -391,3 +391,165 @@ tr.selected td {
 .source-badge.area_estimate {
   background: rgba(128, 128, 128, 0.2);
 }
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-top: 1px solid rgba(128, 128, 128, 0.3);
+}
+
+.timeline-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1rem;
+}
+
+.timeline-head h3 {
+  margin: 0;
+}
+
+.timeline-head > .muted {
+  flex: 1;
+  min-width: 14rem;
+  font-size: 0.85rem;
+}
+
+.timeline-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.timeline-actions button {
+  padding: 0.45rem 0.9rem;
+  font-size: 0.85rem;
+}
+
+.timeline-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.timeline-track {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+
+.day-chip {
+  flex: 0 0 11rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid rgba(128, 128, 128, 0.35);
+  background: var(--textbox-color);
+  color: inherit;
+  font-weight: 400;
+  font-size: 0.8rem;
+  text-align: left;
+}
+
+.day-chip strong {
+  font-size: 1.05rem;
+}
+
+.day-chip.selected {
+  border-color: var(--theme-color);
+  box-shadow: inset 0 0 0 1px var(--theme-color);
+}
+
+.day-label {
+  font-weight: 600;
+}
+
+.change.up {
+  color: #16a34a;
+}
+
+.change.down {
+  color: #dc2626;
+}
+
+.change.flat {
+  opacity: 0.7;
+}
+
+.timeline-summary {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.day-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1.25rem;
+}
+
+@media (max-width: 760px) {
+  .day-detail {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.day-detail h4 {
+  margin: 0.25rem 0 0.4rem;
+}
+
+.pnl {
+  font-size: 0.85rem;
+}
+
+.pnl th,
+.pnl td {
+  padding: 0.35rem 0.5rem;
+}
+
+.pnl tr.total td {
+  font-weight: 700;
+}
+
+.small {
+  font-size: 0.75rem;
+  margin: 0.4rem 0 0.75rem;
+}
+
+.visit-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 26rem;
+  overflow-y: auto;
+  font-size: 0.82rem;
+}
+
+.visit-list li {
+  padding: 0.5rem 0.6rem;
+  border-radius: 0.375rem;
+  background: var(--textbox-color);
+}
+
+.visit-list li.changed {
+  box-shadow: inset 3px 0 0 #2563eb;
+}
+
+.visit-list li.lost {
+  box-shadow: inset 3px 0 0 #dc2626;
+}
+
+.visit-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: baseline;
+}

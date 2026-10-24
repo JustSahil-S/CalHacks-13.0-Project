@@ -41,6 +41,7 @@ import DeleteScenarioReducer from "./delete_scenario_reducer";
 import RemoveItemReducer from "./remove_item_reducer";
 import RenameScenarioReducer from "./rename_scenario_reducer";
 import ResetSimulationReducer from "./reset_simulation_reducer";
+import ResetTimelineReducer from "./reset_timeline_reducer";
 import RevertEditReducer from "./revert_edit_reducer";
 import SendMessageReducer from "./send_message_reducer";
 import SetCompetitorsReducer from "./set_competitors_reducer";
@@ -57,6 +58,7 @@ import * as FetchMenusProcedure from "./fetch_menus_procedure";
 import * as GenerateAllAgentsProcedure from "./generate_all_agents_procedure";
 import * as GeneratePersonasProcedure from "./generate_personas_procedure";
 import * as PopulateStoreProcedure from "./populate_store_procedure";
+import * as SimulateDaysProcedure from "./simulate_days_procedure";
 
 // Import all table schema definitions
 import AgentEventRow from "./agent_event_table";
@@ -71,6 +73,9 @@ import PopulateJobRow from "./populate_job_table";
 import ReviewRow from "./review_table";
 import ScenarioRow from "./scenario_table";
 import ScenarioEditRow from "./scenario_edit_table";
+import SimDayRow from "./sim_day_table";
+import SimStoreDayRow from "./sim_store_day_table";
+import SimVisitRow from "./sim_visit_table";
 import SimulationRow from "./simulation_table";
 import UserRow from "./user_table";
 
@@ -233,6 +238,54 @@ const tablesSchema = __schema({
       { name: 'scenario_edit_edit_id_key', constraint: 'unique', columns: ['editId'] },
     ],
   }, ScenarioEditRow),
+  simDay: __table({
+    name: 'sim_day',
+    indexes: [
+      { accessor: 'day_id', name: 'sim_day_day_id_idx_btree', algorithm: 'btree', columns: [
+        'dayId',
+      ] },
+      { accessor: 'scenario_id', name: 'sim_day_scenario_id_idx_btree', algorithm: 'btree', columns: [
+        'scenarioId',
+      ] },
+    ],
+    constraints: [
+      { name: 'sim_day_day_id_key', constraint: 'unique', columns: ['dayId'] },
+    ],
+  }, SimDayRow),
+  simStoreDay: __table({
+    name: 'sim_store_day',
+    indexes: [
+      { accessor: 'day_id', name: 'sim_store_day_day_id_idx_btree', algorithm: 'btree', columns: [
+        'dayId',
+      ] },
+      { accessor: 'row_id', name: 'sim_store_day_row_id_idx_btree', algorithm: 'btree', columns: [
+        'rowId',
+      ] },
+      { accessor: 'scenario_id', name: 'sim_store_day_scenario_id_idx_btree', algorithm: 'btree', columns: [
+        'scenarioId',
+      ] },
+    ],
+    constraints: [
+      { name: 'sim_store_day_row_id_key', constraint: 'unique', columns: ['rowId'] },
+    ],
+  }, SimStoreDayRow),
+  simVisit: __table({
+    name: 'sim_visit',
+    indexes: [
+      { accessor: 'day_id', name: 'sim_visit_day_id_idx_btree', algorithm: 'btree', columns: [
+        'dayId',
+      ] },
+      { accessor: 'scenario_id', name: 'sim_visit_scenario_id_idx_btree', algorithm: 'btree', columns: [
+        'scenarioId',
+      ] },
+      { accessor: 'visit_id', name: 'sim_visit_visit_id_idx_btree', algorithm: 'btree', columns: [
+        'visitId',
+      ] },
+    ],
+    constraints: [
+      { name: 'sim_visit_visit_id_key', constraint: 'unique', columns: ['visitId'] },
+    ],
+  }, SimVisitRow),
   simulation: __table({
     name: 'simulation',
     indexes: [
@@ -266,6 +319,7 @@ const reducersSchema = __reducers(
   __reducerSchema("remove_item", RemoveItemReducer),
   __reducerSchema("rename_scenario", RenameScenarioReducer),
   __reducerSchema("reset_simulation", ResetSimulationReducer),
+  __reducerSchema("reset_timeline", ResetTimelineReducer),
   __reducerSchema("revert_edit", RevertEditReducer),
   __reducerSchema("send_message", SendMessageReducer),
   __reducerSchema("set_competitors", SetCompetitorsReducer),
@@ -284,6 +338,7 @@ const proceduresSchema = __procedures(
   __procedureSchema("generate_all_agents", GenerateAllAgentsProcedure.params, GenerateAllAgentsProcedure.returnType),
   __procedureSchema("generate_personas", GeneratePersonasProcedure.params, GeneratePersonasProcedure.returnType),
   __procedureSchema("populate_store", PopulateStoreProcedure.params, PopulateStoreProcedure.returnType),
+  __procedureSchema("simulate_days", SimulateDaysProcedure.params, SimulateDaysProcedure.returnType),
 );
 
 type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "tables"> & {
@@ -302,6 +357,12 @@ type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "ta
     readonly "populate_job": Omit<typeof tablesSchema.schemaType.tables["populateJob"], "accessorName"> & { readonly accessorName: "populate_job" };
     /** @deprecated Use `scenarioEdit` instead. This alias will be removed in the next major version. */
     readonly "scenario_edit": Omit<typeof tablesSchema.schemaType.tables["scenarioEdit"], "accessorName"> & { readonly accessorName: "scenario_edit" };
+    /** @deprecated Use `simDay` instead. This alias will be removed in the next major version. */
+    readonly "sim_day": Omit<typeof tablesSchema.schemaType.tables["simDay"], "accessorName"> & { readonly accessorName: "sim_day" };
+    /** @deprecated Use `simStoreDay` instead. This alias will be removed in the next major version. */
+    readonly "sim_store_day": Omit<typeof tablesSchema.schemaType.tables["simStoreDay"], "accessorName"> & { readonly accessorName: "sim_store_day" };
+    /** @deprecated Use `simVisit` instead. This alias will be removed in the next major version. */
+    readonly "sim_visit": Omit<typeof tablesSchema.schemaType.tables["simVisit"], "accessorName"> & { readonly accessorName: "sim_visit" };
   };
 };
 
@@ -327,6 +388,9 @@ const tableAccessorAliases = {
   "menu_source": "menuSource",
   "populate_job": "populateJob",
   "scenario_edit": "scenarioEdit",
+  "sim_day": "simDay",
+  "sim_store_day": "simStoreDay",
+  "sim_visit": "simVisit",
 } as const;
 
 function __withTableAccessorAliases<T extends object>(target: T, freeze = false): T {
@@ -361,6 +425,12 @@ export type DbView = __DbViewBase & {
   readonly "populate_job": __DbViewBase["populateJob"];
   /** @deprecated Use `scenarioEdit` instead. This alias will be removed in the next major version. */
   readonly "scenario_edit": __DbViewBase["scenarioEdit"];
+  /** @deprecated Use `simDay` instead. This alias will be removed in the next major version. */
+  readonly "sim_day": __DbViewBase["simDay"];
+  /** @deprecated Use `simStoreDay` instead. This alias will be removed in the next major version. */
+  readonly "sim_store_day": __DbViewBase["simStoreDay"];
+  /** @deprecated Use `simVisit` instead. This alias will be removed in the next major version. */
+  readonly "sim_visit": __DbViewBase["simVisit"];
 };
 
 type __TablesBase = __QueryBuilder<typeof tablesSchema.schemaType>;
@@ -379,6 +449,12 @@ export type Tables = __TablesBase & {
   readonly "populate_job": __TablesBase["populateJob"];
   /** @deprecated Use `scenarioEdit` instead. This alias will be removed in the next major version. */
   readonly "scenario_edit": __TablesBase["scenarioEdit"];
+  /** @deprecated Use `simDay` instead. This alias will be removed in the next major version. */
+  readonly "sim_day": __TablesBase["simDay"];
+  /** @deprecated Use `simStoreDay` instead. This alias will be removed in the next major version. */
+  readonly "sim_store_day": __TablesBase["simStoreDay"];
+  /** @deprecated Use `simVisit` instead. This alias will be removed in the next major version. */
+  readonly "sim_visit": __TablesBase["simVisit"];
 };
 
 /** The tables available in this remote SpacetimeDB module. Each table reference doubles as a query builder. */

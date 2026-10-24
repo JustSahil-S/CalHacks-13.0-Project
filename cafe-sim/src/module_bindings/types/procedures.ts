@@ -11,6 +11,7 @@ import * as FetchMenusProcedure from "../fetch_menus_procedure";
 import * as GenerateAllAgentsProcedure from "../generate_all_agents_procedure";
 import * as GeneratePersonasProcedure from "../generate_personas_procedure";
 import * as PopulateStoreProcedure from "../populate_store_procedure";
+import * as SimulateDaysProcedure from "../simulate_days_procedure";
 
 export type AdvanceTimeArgs = __Infer<typeof AdvanceTimeProcedure.params>;
 export type AdvanceTimeResult = __Infer<typeof AdvanceTimeProcedure.returnType>;
@@ -22,4 +23,6 @@ export type GeneratePersonasArgs = __Infer<typeof GeneratePersonasProcedure.para
 export type GeneratePersonasResult = __Infer<typeof GeneratePersonasProcedure.returnType>;
 export type PopulateStoreArgs = __Infer<typeof PopulateStoreProcedure.params>;
 export type PopulateStoreResult = __Infer<typeof PopulateStoreProcedure.returnType>;
+export type SimulateDaysArgs = __Infer<typeof SimulateDaysProcedure.params>;
+export type SimulateDaysResult = __Infer<typeof SimulateDaysProcedure.returnType>;
 

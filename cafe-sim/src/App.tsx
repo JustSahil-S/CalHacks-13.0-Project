@@ -5,6 +5,7 @@ import { useProcedure, useReducer, useSpacetimeDB, useTable } from 'spacetimedb/
 import StoreMap from './StoreMap';
 import MenuSection from './MenuSection';
 import MenuPanel from './MenuPanel';
+import Timeline from './Timeline';
 
 const MAX_RADIUS_KM = 2;
 const COMPETITOR_LIMIT = 50;
@@ -272,6 +273,16 @@ function App() {
                 />
               )
             }
+          />
+          <Timeline
+            stores={[store, ...competitors.map(({ business }) => business!)]}
+            ownPlaceId={store.placeId}
+            agents={agents}
+            scenarioId={scenarioId}
+            scenarioName={scenarios.find(s => s.scenarioId === scenarioId)?.name ?? 'Base'}
+            running={running}
+            jobMessage={job?.message ?? ''}
+            onError={error => setRequestError(errorMessage(error))}
           />
         </section>
       )}

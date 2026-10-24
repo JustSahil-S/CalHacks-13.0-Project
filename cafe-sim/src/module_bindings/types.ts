@@ -188,6 +188,42 @@ export const ScenarioEdit = __t.object("ScenarioEdit", {
 });
 export type ScenarioEdit = __Infer<typeof ScenarioEdit>;
 
+export const SimDay = __t.object("SimDay", {
+  dayId: __t.u32(),
+  scenarioId: __t.u32(),
+  day: __t.u32(),
+  date: __t.string(),
+  weekday: __t.string(),
+  createdAt: __t.timestamp(),
+});
+export type SimDay = __Infer<typeof SimDay>;
+
+export const SimStoreDay = __t.object("SimStoreDay", {
+  rowId: __t.u32(),
+  dayId: __t.u32(),
+  scenarioId: __t.u32(),
+  placeId: __t.string(),
+  customers: __t.f64(),
+  revenueCents: __t.f64(),
+  costCents: __t.f64(),
+});
+export type SimStoreDay = __Infer<typeof SimStoreDay>;
+
+export const SimVisit = __t.object("SimVisit", {
+  visitId: __t.u32(),
+  dayId: __t.u32(),
+  scenarioId: __t.u32(),
+  agentId: __t.u32(),
+  placeId: __t.string(),
+  chance: __t.f64(),
+  customers: __t.f64(),
+  itemsJson: __t.string(),
+  spendCents: __t.u32(),
+  costCents: __t.u32(),
+  reason: __t.string(),
+});
+export type SimVisit = __Infer<typeof SimVisit>;
+
 export const Simulation = __t.object("Simulation", {
   placeId: __t.string(),
   simMinute: __t.u32(),
