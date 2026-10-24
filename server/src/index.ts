@@ -256,7 +256,9 @@ export const start_twin_build = spacetimedb.reducer(
   }
 );
 
-// Anyone can add their café, within limits that keep scraping and Claude costs bounded.
+// Anyone can add their café. Off while only the team has the link; set to true before sharing
+// it widely, to keep scraping and Claude costs bounded.
+const LIMIT_PUBLIC_BUILDS = false;
 const PUBLIC_BUILDS_PER_PERSON_PER_HOUR = 2;
 const PUBLIC_BUILDS_PER_HOUR = 6;
 const PUBLIC_BUILDS_PER_DAY = 20;
@@ -273,7 +275,7 @@ export const add_cafe = spacetimedb.reducer({ query: t.string() }, (ctx, { query
   }
   const builder = isAdmin(ctx) || ctx.db.partner.identity.find(ctx.sender) !== null;
   if (builder) requireBuilder(ctx);
-  else {
+  else if (LIMIT_PUBLIC_BUILDS) {
     const now = ctx.timestamp.microsSinceUnixEpoch;
     // Failed builds don't count: they stop at the cheap Google lookup.
     const owners = [...ctx.db.buildOwner.iter()].filter(o => ctx.db.twinBuild.id.find(o.buildId)?.status !== 'failed');
