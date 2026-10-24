@@ -8,3 +8,6 @@ client/dist/
 data/
 node_modules/
 server/dist/
+
+# Engine token for the Mana menu service (paste into Mana credentials; never commit)
+.mana-service-token

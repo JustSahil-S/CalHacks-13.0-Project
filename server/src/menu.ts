@@ -35,22 +35,26 @@ const ORDERING = /toasttab\.com|square\.site|squareup\.com|order\.online|chownow
 const DELIVERY = /doordash\.com|ubereats\.com|grubhub\.com|seamless\.com|postmates\.com/i; // prices usually marked up
 const SKIP = /google\.|yelp\.|instagram\.|facebook\.|tripadvisor\.|tiktok\.|reddit\.|x\.com|twitter\./i;
 
-/** Best menu page among search results: ordering page > their own menu page > menu sites > delivery apps. */
-export function pickMenuUrl(results: { url: string; title?: string }[], website: string): string {
+/** How good a search result looks as a menu page: ordering page > their own menu page > menu sites > delivery apps. */
+export function menuUrlScore(url: string, website: string): number {
   const own = hostOf(website).replace(/^www\./, '');
+  if (!url.startsWith('http') || SKIP.test(url)) return 0;
+  if (ORDERING.test(url)) return 6;
+  if (own && url.includes(own) && /menu/i.test(url)) return 5;
+  if (/menu/i.test(url) && !DELIVERY.test(url)) return 3;
+  if (own && url.includes(own)) return 2;
+  if (DELIVERY.test(url)) return 1;
+  return 0;
+}
+
+/** Best menu page among search results (first one wins a tie). */
+export function pickMenuUrl(results: { url: string; title?: string }[], website: string): string {
   let best = '';
   let bestScore = 0;
   for (const r of results) {
-    const url = r.url ?? '';
-    if (!url.startsWith('http') || SKIP.test(url)) continue;
-    let score = 0;
-    if (ORDERING.test(url)) score = 6;
-    else if (own && url.includes(own) && /menu/i.test(url)) score = 5;
-    else if (/menu/i.test(url) && !DELIVERY.test(url)) score = 3;
-    else if (own && url.includes(own)) score = 2;
-    else if (DELIVERY.test(url)) score = 1;
+    const score = menuUrlScore(r.url ?? '', website);
     if (score > bestScore) {
-      best = url;
+      best = r.url;
       bestScore = score;
     }
   }
@@ -144,7 +148,7 @@ const MENU_RULES = [
   'note: one short sentence on where the prices came from.',
 ].join('\n');
 
-function toItems(raw: { name: string; category: string; price: number }[]): MenuItemIn[] {
+function toItems(raw: { name: string; category: string; price: number }[], cap = 14): MenuItemIn[] {
   const used = new Set<string>();
   const items: MenuItemIn[] = [];
   for (const r of raw ?? []) {
@@ -155,7 +159,13 @@ function toItems(raw: { name: string; category: string; price: number }[]): Menu
     used.add(key);
     items.push({ key, name: r.name.trim().slice(0, 60), category: r.category || 'menu', priceCents: cents });
   }
-  return items.slice(0, 14);
+  return items.slice(0, cap);
+}
+
+/** A real menu read elsewhere (e.g. by Mana's browser agent): same cleaning, a fuller list. */
+export const REAL_MENU_MAX = 60;
+export function realMenuItems(raw: { name: string; category: string; price: number }[]): MenuItemIn[] {
+  return toItems(raw, REAL_MENU_MAX);
 }
 
 /** Read the menu from crawled pages (text + menu images/PDFs). */

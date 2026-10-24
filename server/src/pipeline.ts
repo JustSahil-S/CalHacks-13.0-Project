@@ -5,9 +5,9 @@
 import { ScheduleAt } from 'spacetimedb';
 import { callClaude, type ProcCtx } from './claude';
 import { hash32 } from './rng';
-import { loadTwin, type TwinInput } from './sim';
+import { loadTwin, type Ctx, type TwinInput } from './sim';
 import { MAX_RADIUS_M, rivalsFromPlaces } from './rivals';
-import { estimateMenu, isDeliveryUrl, MENU_CRAWLER, menuCrawlInput, menuSearchInput, pickMenuUrl, readMenuFromPages, SEARCH_ACTOR } from './menu';
+import { estimateMenu, isDeliveryUrl, MENU_CRAWLER, menuCrawlInput, menuSearchInput, menuUrlScore, pickMenuUrl, readMenuFromPages, SEARCH_ACTOR } from './menu';
 
 const PLACES_ACTOR = 'compass~crawler-google-places';
 const REVIEWS_ACTOR = 'compass~google-maps-reviews-scraper';
@@ -246,10 +246,7 @@ export function advanceBuild(ctx: ProcCtx, buildId: bigint) {
         return;
       }
 
-      // Customers come only from reviews with real text, and (for a backtest) only from before the cutoff.
-      const usable = reviews
-        .filter(x => x.text.trim().length >= 30 && (!b.cutoffDate || x.date < b.cutoffDate))
-        .slice(-MAX_PROFILES);
+      const usable = usableReviews(reviews, b.cutoffDate);
       if (usable.length < 20) {
         throw new Error(`Only ${usable.length} usable reviews${b.cutoffDate ? ' before the cutoff' : ''}; need at least 20`);
       }
@@ -280,23 +277,8 @@ export function advanceBuild(ctx: ProcCtx, buildId: bigint) {
         );
       }
 
-      const menu: MenuEntry[] = JSON.parse(menuJson);
-      const menuForPrompt = menu.map(m => ({ key: m.key, name: m.name, price: `$${(m.priceCents / 100).toFixed(2)}` }));
-      const batches: { i: number; stars: number; date: string; text: string }[][] = [];
-      usable.forEach((rev, i) => {
-        if (i % PROFILE_BATCH === 0) batches.push([]);
-        batches[batches.length - 1].push({ i, stars: rev.stars, date: rev.date, text: rev.text.slice(0, 700) });
-      });
-
       ctx.withTx(tx => {
-        for (const batch of batches) {
-          tx.db.profileJob.insert({
-            scheduledId: 0n,
-            scheduledAt: ScheduleAt.time(tx.timestamp.microsSinceUnixEpoch),
-            buildId,
-            payloadJson: JSON.stringify({ menu: menuForPrompt, reviews: batch }),
-          });
-        }
+        const batches = queueProfileJobs(tx, buildId, menuJson, usable);
         const cur = tx.db.twinBuild.id.find(buildId)!;
         tx.db.twinBuild.id.update({
           ...cur,
@@ -304,7 +286,7 @@ export function advanceBuild(ctx: ProcCtx, buildId: bigint) {
           menuJson,
           reviewsJson: JSON.stringify(reviews),
           competitorsJson: JSON.stringify(competitors),
-          batchesTotal: batches.length,
+          batchesTotal: batches,
           batchesDone: 0,
           detail: `Claude is reading ${usable.length} reviews (${reviews.length} scraped)`,
         });
@@ -449,6 +431,62 @@ export function inspectMenuCrawl(ctx: ProcCtx, buildId: bigint): string {
       snippet: (p.markdown || p.text || '').replace(/\s+/g, ' ').slice(0, 700),
     })),
   });
+}
+
+/** Admin: the Google search a build's menu lookup ran, and how each result scored as a menu page. */
+export function inspectMenuSearch(ctx: ProcCtx, buildId: bigint): string {
+  const token = ctx.env.APIFY_TOKEN;
+  const b = ctx.withTx(tx => tx.db.twinBuild.id.find(buildId));
+  if (!token || !b?.placeJson) return JSON.stringify({ error: 'no token or no place for this build' });
+  const place: Place = JSON.parse(b.placeJson);
+  const want = menuSearchInput(place).queries;
+  const runs: any[] = apify(ctx, token, 'GET', `acts/${SEARCH_ACTOR}/runs?desc=1&limit=50`).data.items;
+  for (const r of runs) {
+    let input: any;
+    try {
+      input = apify(ctx, token, 'GET', `key-value-stores/${r.defaultKeyValueStoreId}/records/INPUT`);
+    } catch {
+      continue;
+    }
+    if (input?.queries !== want) continue;
+    const results: { url: string; title?: string }[] =
+      r.status === 'SUCCEEDED' ? datasetItems(ctx, token, r.defaultDatasetId, 'organicResults', 1)[0]?.organicResults ?? [] : [];
+    return JSON.stringify({
+      runId: r.id,
+      startedAt: r.startedAt,
+      status: r.status,
+      query: want,
+      website: place.website ?? '',
+      picked: pickMenuUrl(results, place.website ?? ''),
+      results: results.map((x, i) => ({ rank: i + 1, url: x.url, title: x.title, score: menuUrlScore(x.url ?? '', place.website ?? '') })),
+    });
+  }
+  return JSON.stringify({ error: `no search run found for "${want}"` });
+}
+
+/** Customers come only from reviews with real text, and (for a backtest) only from before the cutoff. */
+export function usableReviews(reviews: Review[], cutoffDate: string): Review[] {
+  return reviews.filter(x => x.text.trim().length >= 30 && (!cutoffDate || x.date < cutoffDate)).slice(-MAX_PROFILES);
+}
+
+/** Queue Claude to read these reviews against this menu, one profile job per batch. Returns the batch count. */
+export function queueProfileJobs(tx: Pick<Ctx, 'db' | 'timestamp'>, buildId: bigint, menuJson: string, usable: Review[]): number {
+  const menu: MenuEntry[] = JSON.parse(menuJson);
+  const menuForPrompt = menu.map(m => ({ key: m.key, name: m.name, price: `$${(m.priceCents / 100).toFixed(2)}` }));
+  const batches: { i: number; stars: number; date: string; text: string }[][] = [];
+  usable.forEach((rev, i) => {
+    if (i % PROFILE_BATCH === 0) batches.push([]);
+    batches[batches.length - 1].push({ i, stars: rev.stars, date: rev.date, text: rev.text.slice(0, 700) });
+  });
+  for (const batch of batches) {
+    tx.db.profileJob.insert({
+      scheduledId: 0n,
+      scheduledAt: ScheduleAt.time(tx.timestamp.microsSinceUnixEpoch),
+      buildId,
+      payloadJson: JSON.stringify({ menu: menuForPrompt, reviews: batch }),
+    });
+  }
+  return batches.length;
 }
 
 export function hasMenu(menuJson: string): boolean {

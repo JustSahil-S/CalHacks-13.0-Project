@@ -32,6 +32,10 @@ export interface Fork {
   /** Ask the engine to build a twin of a café (Google Maps link or "name, street, city").
    *  Resolves with the build id; follow it with builds(). Rejects with a readable limit message. */
   addCafe(query: string): Promise<bigint | null>;
+  /** Where a café's menu came from (loads on first call; null until then). */
+  menuSourceOf(buildId: bigint): { source: string; url: string; detail: string } | null;
+  /** The café's Google Maps record: website, Maps link, address, phone-free. One request. */
+  placeOf(buildId: bigint): Promise<{ title: string; address: string; website: string; mapsUrl: string; lat: number; lng: number } | null>;
   /** Builds that aren't ready yet (or failed), newest first, with live progress. */
   builds(): BuildProgress[];
   menu(universeId: bigint): { key: string; name: string; category: string; priceCents: number }[];
@@ -65,7 +69,7 @@ export interface CafeSummary {
   rating: number | null;
   reviewsCount: number | null;
   backtestCutoff: string; // '' for a current café
-  menuSource: string; // website | menu photo | estimated | provided
+  menuSource: string; // website | menu photo | estimated | provided | read by Mana
   mapReady: boolean;
   customers: number; // simulated customers
   reviewers: number; // real Google reviewers they were built from
@@ -111,7 +115,7 @@ export function connectFork(opts: { host?: string; db?: string } = {}): Promise<
           } catch {
             /* ignore */
           }
-          const fork = makeFork(conn, identity.toHexString());
+          const fork = makeFork(conn, identity.toHexString(), host.replace(/^ws/, 'http'), db);
           fork
             // Light tables only; menus, hours and maps load per café when asked for.
             .subscribe('base', [
@@ -131,7 +135,7 @@ export function connectFork(opts: { host?: string; db?: string } = {}): Promise<
   });
 }
 
-function makeFork(conn: DbConnection, identity: string): Fork {
+function makeFork(conn: DbConnection, identity: string, httpHost: string, dbName: string): Fork {
   const listeners = new Set<() => void>();
   let queued = false;
   const changed = () => {
@@ -195,7 +199,8 @@ function makeFork(conn: DbConnection, identity: string): Fork {
     },
     cafes() {
       return [...conn.db.buildCard.iter()]
-        .filter(c => c.status === 'done' && c.universeId !== 0n && c.cutoffDate !== 'scan')
+        // A café with a twin stays usable while a new menu is being applied (or if that fails).
+        .filter(c => c.universeId !== 0n && c.cutoffDate !== 'scan')
         .map(c => {
           const m = /(\d+) customers from (\d+)/.exec(c.detail);
           return {
@@ -217,6 +222,23 @@ function makeFork(conn: DbConnection, identity: string): Fork {
       lazy(`cafe:${universeId}`, [`SELECT * FROM cafe WHERE universe_id = ${universeId}`]);
       const c = conn.db.cafe.universeId.find(universeId);
       return c ? { open: c.openHour, close: c.closeHour } : null;
+    },
+    menuSourceOf(buildId) {
+      lazy(`menu-source:${buildId}`, [`SELECT * FROM menu_source WHERE build_id = ${buildId}`]);
+      const m = conn.db.menuSource.buildId.find(buildId);
+      return m ? { source: m.source, url: m.url, detail: m.detail } : null;
+    },
+    async placeOf(buildId) {
+      const res = await fetch(`${httpHost}/v1/database/${dbName}/sql`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: `SELECT place_json FROM twin_build WHERE id = ${BigInt(buildId)}`,
+      });
+      if (!res.ok) return null;
+      const raw = (await res.json())?.[0]?.rows?.[0]?.[0];
+      if (!raw) return null;
+      const p = JSON.parse(raw);
+      return { title: p.title ?? '', address: p.address ?? '', website: p.website ?? '', mapsUrl: p.url ?? '', lat: p.location?.lat ?? 0, lng: p.location?.lng ?? 0 };
     },
     async addCafe(query) {
       await conn.reducers.addCafe({ query });

@@ -5,8 +5,9 @@ import { ScheduleAt } from 'spacetimedb';
 import spacetimedb, { buildJob, clockJob, decisionJob, mapJob, profileJob, rivalJob } from './schema';
 import { fetchAreaMap } from './areamap';
 import { syncCard } from './cards';
+import { realMenuItems } from './menu';
 import { callClaude } from './claude';
-import { advanceBuild, advanceRivalScan, fixedCosts, inspectMenuCrawl, nominalRevenuePerDay, profileBatch, SCAN } from './pipeline';
+import { advanceBuild, advanceRivalScan, fixedCosts, inspectMenuCrawl, inspectMenuSearch, queueProfileJobs, usableReviews, nominalRevenuePerDay, profileBatch, SCAN } from './pipeline';
 import { DEFAULT_RADIUS_M, MAX_RADIUS_M } from './rivals';
 import {
   applyPrices,
@@ -318,6 +319,47 @@ function queueBuild(ctx: Ctx, query: string, label: string, menuJson: string, cu
   syncCard(ctx, b.id);
 }
 
+/**
+ * Builder (the Mana menu service, admin): replace a café's menu with one read from the web, then
+ * rebuild its customers from the reviews already scraped, so usual orders point at real items.
+ * items: [{ name, category, price }] with price in dollars (regular size, in-store).
+ */
+export const set_real_menu = spacetimedb.reducer(
+  { buildId: t.u64(), itemsJson: t.string(), sourceUrl: t.string(), evidence: t.string() },
+  (ctx, { buildId, itemsJson, sourceUrl, evidence }) => {
+    requireBuilder(ctx);
+    const b = ctx.db.twinBuild.id.find(buildId);
+    if (!b) throw new SenderError(`no café build ${buildId}`);
+    if (b.cutoffDate !== '') throw new SenderError('only current cafés take a new menu (not backtests)');
+    if (b.status !== 'done' && b.status !== 'failed') throw new SenderError(`café is busy (${b.status}); try again when it is ready`);
+    if (!b.reviewsJson || !b.placeJson) throw new SenderError('this café has no stored reviews to rebuild from');
+    const raw = parseJson<{ name: string; category: string; price: number }[]>(itemsJson, 'itemsJson');
+    if (!Array.isArray(raw)) throw new SenderError('itemsJson must be a list of { name, category, price }');
+    const items = realMenuItems(raw);
+    if (items.length < 3) throw new SenderError(`need at least 3 priced items; got ${items.length} usable`);
+    if (!/^https?:\/\//.test(sourceUrl)) throw new SenderError('sourceUrl must be the http(s) page the menu was read from');
+    const usable = usableReviews(JSON.parse(b.reviewsJson), b.cutoffDate);
+    if (usable.length < 10) throw new SenderError(`only ${usable.length} usable stored reviews`);
+
+    const menuJson = JSON.stringify(items);
+    // Fresh profiles against the real menu (old ones were read against the estimate).
+    for (const p of [...ctx.db.twinProfile.buildId.filter(buildId)]) ctx.db.twinProfile.id.delete(p.id);
+    const batches = queueProfileJobs(ctx, buildId, menuJson, usable);
+    ctx.db.twinBuild.id.update({
+      ...b,
+      menuJson,
+      status: 'profiling',
+      batchesTotal: batches,
+      batchesDone: 0,
+      detail: `Real menu (${items.length} items) received; Claude is re-reading ${usable.length} reviews against it`,
+    });
+    const row = { buildId, status: 'ready', source: 'read by Mana', url: sourceUrl.slice(0, 500), runId: '', detail: evidence.slice(0, 800) };
+    if (ctx.db.menuSource.buildId.find(buildId)) ctx.db.menuSource.buildId.update(row);
+    else ctx.db.menuSource.insert(row);
+    syncCard(ctx, buildId);
+  }
+);
+
 /** Scrape a café's reviews only (no customers), to look for price changes worth backtesting. */
 export const start_review_scan = spacetimedb.reducer({ query: t.string() }, (ctx, { query }) => {
   requireAdmin(ctx);
@@ -413,6 +455,12 @@ export const build_area_map = spacetimedb.procedure(
 export const inspect_menu_crawl = spacetimedb.procedure({ buildId: t.u64() }, t.string(), (ctx, { buildId }) =>
   ctx.withTx(tx => tx.db.admin.identity.find(ctx.sender) !== null)
     ? inspectMenuCrawl(ctx, buildId)
+    : JSON.stringify({ error: 'admin only' })
+);
+
+export const inspect_menu_search = spacetimedb.procedure({ buildId: t.u64() }, t.string(), (ctx, { buildId }) =>
+  ctx.withTx(tx => tx.db.admin.identity.find(ctx.sender) !== null)
+    ? inspectMenuSearch(ctx, buildId)
     : JSON.stringify({ error: 'admin only' })
 );
 

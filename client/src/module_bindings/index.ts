@@ -48,6 +48,7 @@ import ResetAllReducer from "./reset_all_reducer";
 import RetryBuildReducer from "./retry_build_reducer";
 import RunUniverseReducer from "./run_universe_reducer";
 import SetPricesReducer from "./set_prices_reducer";
+import SetRealMenuReducer from "./set_real_menu_reducer";
 import StartClockReducer from "./start_clock_reducer";
 import StartExperimentReducer from "./start_experiment_reducer";
 import StartExperimentRReducer from "./start_experiment_r_reducer";
@@ -58,6 +59,7 @@ import SyncCardsReducer from "./sync_cards_reducer";
 
 // Import all procedure arg schemas
 import * as InspectMenuCrawlProcedure from "./inspect_menu_crawl_procedure";
+import * as InspectMenuSearchProcedure from "./inspect_menu_search_procedure";
 
 // Import all table schema definitions
 import AdminRow from "./admin_table";
@@ -467,6 +469,7 @@ const reducersSchema = __reducers(
   __reducerSchema("retry_build", RetryBuildReducer),
   __reducerSchema("run_universe", RunUniverseReducer),
   __reducerSchema("set_prices", SetPricesReducer),
+  __reducerSchema("set_real_menu", SetRealMenuReducer),
   __reducerSchema("start_clock", StartClockReducer),
   __reducerSchema("start_experiment", StartExperimentReducer),
   __reducerSchema("start_experiment_r", StartExperimentRReducer),
@@ -479,6 +482,7 @@ const reducersSchema = __reducers(
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */
 const proceduresSchema = __procedures(
   __procedureSchema("inspect_menu_crawl", InspectMenuCrawlProcedure.params, InspectMenuCrawlProcedure.returnType),
+  __procedureSchema("inspect_menu_search", InspectMenuSearchProcedure.params, InspectMenuSearchProcedure.returnType),
 );
 
 /** The remote SpacetimeDB module schema, both runtime and type information. */
