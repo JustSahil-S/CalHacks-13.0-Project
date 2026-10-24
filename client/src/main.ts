@@ -122,7 +122,9 @@ connect({
 
 function viewableBuilds(): TwinBuild[] {
   if (!conn) return [];
-  return [...conn.db.twinBuild.iter()].filter(b => b.status === 'done' && b.universeId !== 0n);
+  return [...conn.db.twinBuild.iter()].filter(
+    b => b.status === 'done' && b.universeId !== 0n && conn!.db.areaMap.buildId.find(b.id)?.status === 'ready'
+  );
 }
 
 function buildLabel(b: TwinBuild) {
@@ -132,7 +134,10 @@ function buildLabel(b: TwinBuild) {
 
 function autoSelect() {
   const builds = viewableBuilds().filter(b => conn!.db.areaMap.buildId.find(b.id)?.status === 'ready');
-  if (builds.length) selectBuild(builds[builds.length - 1].id);
+  // ?cafe=<build id> opens a specific café (used when the viewer is embedded, e.g. in Mana).
+  const wanted = new URLSearchParams(location.search).get('cafe');
+  const pick = builds.find(b => String(b.id) === wanted) ?? builds.sort((a, b) => Number(b.id - a.id))[0];
+  if (pick) selectBuild(pick.id);
 }
 
 $<HTMLSelectElement>('cafe-select').addEventListener('change', e => {
