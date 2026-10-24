@@ -22,46 +22,46 @@
     {
       "metric": "average stars",
       "real": -0.09090909090909083,
-      "simulated": -0.028025730444621644
+      "simulated": -0.03288033796508305
     },
     {
       "metric": "share of reviews mentioning price",
       "real": 0.14285714285714285,
-      "simulated": 0.041237113402061855
+      "simulated": 0.05805805805805806
     },
     {
       "metric": "traffic (real: review count ratio; sim: visits ratio)",
       "real": 0.8333333333333333,
-      "simulated": -0.06895291688743543
+      "simulated": -0.05766309817915649
     }
   ],
   "agree": 2,
   "scored": 3,
   "simulated": {
     "control": {
-      "id": 10,
-      "experiment_id": 5,
+      "id": 106,
+      "experiment_id": 53,
       "option_label": "control",
       "copies": 10,
-      "mean_revenue_cents": 9008900,
-      "mean_profit_cents": -17093770,
-      "mean_visits": 21893.2,
-      "mean_stars": 4.404782993799823,
+      "mean_revenue_cents": 8992220,
+      "mean_profit_cents": 1423574,
+      "mean_visits": 21858,
+      "mean_stars": 4.39924670433145,
       "price_mention_share": 0,
       "revenue_wins": 0,
       "profit_wins": 0,
       "rating_drops": 0
     },
     "change": {
-      "id": 11,
-      "experiment_id": 5,
+      "id": 107,
+      "experiment_id": 53,
       "option_label": "real change",
       "copies": 10,
-      "mean_revenue_cents": 9303170,
-      "mean_profit_cents": -16609174,
-      "mean_visits": 20383.6,
-      "mean_stars": 4.376757263355201,
-      "price_mention_share": 0.041237113402061855,
+      "mean_revenue_cents": 9405360,
+      "mean_profit_cents": 1994778,
+      "mean_visits": 20597.6,
+      "mean_stars": 4.366366366366367,
+      "price_mention_share": 0.05805805805805806,
       "revenue_wins": 10,
       "profit_wins": 10,
       "rating_drops": 0
