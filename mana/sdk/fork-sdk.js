@@ -18718,7 +18718,12 @@ var tv = class {
 				this.addPin("rival", t.name, n < 1 ? `${n.toFixed(2)} mi` : `${n.toFixed(1)} mi`, Z_(t.x, t.y, e + 22 * a)), this.rivalPins.push(this.pins[this.pins.length - 1].el);
 			}
 		}
-		this.viewSizeGoal = Math.max(n * 1.35, t * 2.3);
+		this.shownRadiusM = t, this.frame("radius");
+	}
+	shownRadiusM = 0;
+	frame(e) {
+		let t = this.mapRadius * 1.35;
+		this.viewSizeGoal = e === "street" ? t : Math.max(t, this.shownRadiusM * 2.3), this.camera.zoom = 1, this.target.set(0, 0, 0);
 	}
 	heightAt(e, t) {
 		return t >= 0 ? Math.max(8, e.buildings[t].h) : 9;
@@ -19006,7 +19011,7 @@ var uv = class {
 	onDay = () => {};
 	onPick = () => {};
 	constructor(e, t) {
-		this.fork = t, dv(), this.scene = new tv(e), this.scene.onFrame = (e) => this.frame(e), this.scene.onPick = (e) => {
+		this.fork = t, dv(), this.scene = new tv(e), this.scene.onFrame = (e) => this.tick(e), this.scene.onPick = (e) => {
 			this.selected = e, this.onPick(e === null ? null : this.customer(e));
 		}, t.onChange(() => this.dirty = !0);
 	}
@@ -19016,6 +19021,9 @@ var uv = class {
 		this.buildId = e, this.root = n.universeId, this.universeId = null;
 		let i = JSON.parse(r.mapJson);
 		this.hood = new Io(i), this.scene.setMap(i), this.crowd = new rv(this.scene, this.hood), await this.fork.subscribe("map-root", [`SELECT * FROM agent WHERE universe_id = ${this.root}`]), this.crowd.setAgents([...t.db.agent.iter()].filter((e) => e.universeId === this.root).map((e) => e.key)), this.setRadius(this.radiusM);
+	}
+	frame(e) {
+		this.scene.frame(e);
 	}
 	setRadius(e) {
 		if (this.radiusM = e, !this.crowd || this.buildId === null) return;
@@ -19030,7 +19038,7 @@ var uv = class {
 		let n = [...this.fork.conn.db.universe.iter()].find((n) => n.experimentId === e && n.optionLabel === t && n.copyNumber === 1);
 		if (!n) throw Error("That experiment has no animated copy.");
 		let r = this.fork.conn.db.experimentRadius.experimentId.find(e)?.radiusM;
-		r && this.setRadius(r), this.universeId = n.id, this.dayFloat = n.forkTick + 1, this.selected = null, await this.fork.subscribe("map-play", [
+		r && this.setRadius(r), this.frame("street"), this.universeId = n.id, this.dayFloat = n.forkTick + 1, this.selected = null, await this.fork.subscribe("map-play", [
 			`SELECT * FROM visit WHERE universe_id = ${n.id}`,
 			`SELECT * FROM event WHERE universe_id = ${n.id}`,
 			`SELECT * FROM agent WHERE universe_id = ${n.id}`,
@@ -19057,7 +19065,7 @@ var uv = class {
 	universe() {
 		return this.universeId === null ? void 0 : this.fork.conn.db.universe.id.find(this.universeId);
 	}
-	frame(e) {
+	tick(e) {
 		let t = this.universe();
 		if (!this.crowd || !t) return;
 		let n = t.forkTick + 1, r = t.currentTick;

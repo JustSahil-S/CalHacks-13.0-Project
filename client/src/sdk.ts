@@ -307,7 +307,7 @@ export class ForkMap {
   constructor(container: HTMLElement, private fork: Fork) {
     injectPinStyles();
     this.scene = new IsoScene(container);
-    this.scene.onFrame = dt => this.frame(dt);
+    this.scene.onFrame = dt => this.tick(dt);
     this.scene.onPick = i => {
       this.selected = i;
       this.onPick(i === null ? null : this.customer(i));
@@ -333,7 +333,12 @@ export class ForkMap {
     this.setRadius(this.radiusM);
   }
 
-  /** Show competitors within this many meters (ring, pins) and zoom to fit. */
+  /** Zoom to the café's streets ('street', people readable) or out to the whole radius ('radius'). */
+  frame(mode: 'street' | 'radius') {
+    this.scene.frame(mode);
+  }
+
+  /** Show competitors within this many meters (ring, pins) and zoom out to fit them. */
   setRadius(radiusM: number) {
     this.radiusM = radiusM;
     if (!this.crowd || this.buildId === null) return;
@@ -342,7 +347,7 @@ export class ForkMap {
     this.scene.setRivals(all.filter(r => r.distanceM <= radiusM), radiusM);
   }
 
-  /** Animate copy #1 of an experiment option ('price change' or 'no change'). */
+  /** Animate copy #1 of an experiment option ('price change' or 'no change'). Frames 'street'. */
   async showExperiment(experimentId: bigint, option = 'price change') {
     const u = [...this.fork.conn.db.universe.iter()].find(
       x => x.experimentId === experimentId && x.optionLabel === option && x.copyNumber === 1
@@ -350,6 +355,7 @@ export class ForkMap {
     if (!u) throw new Error('That experiment has no animated copy.');
     const r = this.fork.conn.db.experimentRadius.experimentId.find(experimentId)?.radiusM;
     if (r) this.setRadius(r);
+    this.frame('street'); // a replay is about the people walking, so start close in
     this.universeId = u.id;
     this.dayFloat = u.forkTick + 1;
     this.selected = null;
@@ -385,7 +391,7 @@ export class ForkMap {
     return this.universeId !== null ? this.fork.conn.db.universe.id.find(this.universeId) : undefined;
   }
 
-  private frame(dt: number) {
+  private tick(dt: number) {
     const u = this.universe();
     if (!this.crowd || !u) return;
     const first = u.forkTick + 1;

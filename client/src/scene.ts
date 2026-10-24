@@ -367,7 +367,18 @@ export class IsoScene {
         this.rivalPins.push(this.pins[this.pins.length - 1].el);
       }
     }
-    this.viewSizeGoal = Math.max(R * 1.35, radiusM * 2.3);
+    this.shownRadiusM = radiusM;
+    this.frame('radius');
+  }
+
+  private shownRadiusM = 0;
+
+  /** Zoom to the café's streets (people readable) or out to the whole rival radius. */
+  frame(mode: 'street' | 'radius') {
+    const street = this.mapRadius * 1.35;
+    this.viewSizeGoal = mode === 'street' ? street : Math.max(street, this.shownRadiusM * 2.3);
+    this.camera.zoom = 1;
+    this.target.set(0, 0, 0);
   }
 
   private heightAt(map: AreaMap, building: number) {
