@@ -18582,8 +18582,12 @@ var tv = class {
 	pins = [];
 	onPick = () => {};
 	onFrame = () => {};
+	pinLayer = document.createElement("div");
+	alive = !0;
+	observer = null;
+	onWindowResize = () => this.resize();
 	constructor(e) {
-		this.host = e, this.renderer = new G_({ antialias: !0 }), this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio)), this.renderer.setClearColor(Y_.paper), this.renderer.shadowMap.enabled = !0, this.renderer.shadowMap.type = 2, e.appendChild(this.renderer.domElement), this.camera = new im(-1, 1, 1, -1, -4e4, 4e4), this.scene.add(this.model), this.scene.add(this.region);
+		this.host = e, this.renderer = new G_({ antialias: !0 }), this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio)), this.renderer.setClearColor(Y_.paper), this.renderer.shadowMap.enabled = !0, this.renderer.shadowMap.type = 2, e.appendChild(this.renderer.domElement), getComputedStyle(e).position === "static" && (e.style.position = "relative"), this.pinLayer.style.cssText = "position:absolute;inset:0;overflow:hidden;pointer-events:none", e.appendChild(this.pinLayer), this.camera = new im(-1, 1, 1, -1, -4e4, 4e4), this.scene.add(this.model), this.scene.add(this.region);
 		let t = new Gp(16775920, 12101768, 1.15);
 		this.scene.add(t);
 		let n = new om(16773596, 1.6);
@@ -18591,12 +18595,16 @@ var tv = class {
 			color: 2038808,
 			transparent: !0,
 			opacity: .85
-		})), this.selectedRing.visible = !1, this.scene.add(this.selectedRing), this.bindControls(), window.addEventListener("resize", () => this.resize()), typeof ResizeObserver < "u" && new ResizeObserver(() => this.resize()).observe(this.host), this.resize();
+		})), this.selectedRing.visible = !1, this.scene.add(this.selectedRing), this.bindControls(), window.addEventListener("resize", this.onWindowResize), typeof ResizeObserver < "u" && (this.observer = new ResizeObserver(() => this.resize()), this.observer.observe(this.host)), this.resize();
 		let r = performance.now(), i = (e) => {
+			if (!this.alive) return;
 			let t = Math.min(.1, (e - r) / 1e3);
 			r = e, this.azimuth += (this.azimuthGoal - this.azimuth) * Math.min(1, t * 8), Math.abs(this.viewSizeGoal - this.viewSize) > .5 && (this.viewSize += (this.viewSizeGoal - this.viewSize) * Math.min(1, t * 5), this.resize()), this.placeCamera(), this.onFrame(t), this.renderer.render(this.scene, this.camera), this.updatePins(), requestAnimationFrame(i);
 		};
 		requestAnimationFrame(i);
+	}
+	dispose() {
+		this.alive = !1, window.removeEventListener("resize", this.onWindowResize), this.observer?.disconnect(), this.clearPins(), this.pinLayer.remove(), this.renderer.dispose(), this.renderer.domElement.remove();
 	}
 	rotate(e) {
 		this.azimuthGoal += e * Math.PI / 2;
@@ -18730,11 +18738,11 @@ var tv = class {
 	}
 	addPin(e, t, n, r) {
 		let i = document.createElement("div");
-		if (i.className = `pin ${e}`, i.textContent = t, n) {
+		if (i.className = `fork-pin ${e}`, i.textContent = t, n) {
 			let e = document.createElement("span");
 			e.textContent = n, i.appendChild(e);
 		}
-		document.body.appendChild(i), this.pins.push({
+		this.pinLayer.appendChild(i), this.pins.push({
 			el: i,
 			world: r
 		});
@@ -18751,10 +18759,10 @@ var tv = class {
 		}
 	}
 	updatePins() {
-		let e = this.renderer.domElement.getBoundingClientRect();
-		for (let t of this.pins) {
-			let n = t.world.clone().project(this.camera);
-			t.el.style.left = `${e.left + (n.x + 1) / 2 * e.width}px`, t.el.style.top = `${e.top + (1 - n.y) / 2 * e.height - 6}px`;
+		let e = this.host.clientWidth, t = this.host.clientHeight;
+		for (let n of this.pins) {
+			let r = n.world.clone().project(this.camera);
+			n.el.style.left = `${(r.x + 1) / 2 * e}px`, n.el.style.top = `${(1 - r.y) / 2 * t - 6}px`;
 		}
 	}
 	setPeopleCount(e) {
@@ -19022,6 +19030,9 @@ var uv = class {
 		let i = JSON.parse(r.mapJson);
 		this.hood = new Io(i), this.scene.setMap(i), this.crowd = new rv(this.scene, this.hood), await this.fork.subscribe("map-root", [`SELECT * FROM agent WHERE universe_id = ${this.root}`]), this.crowd.setAgents([...t.db.agent.iter()].filter((e) => e.universeId === this.root).map((e) => e.key)), this.setRadius(this.radiusM);
 	}
+	dispose() {
+		this.playing = !1, this.scene.dispose();
+	}
 	frame(e) {
 		this.scene.frame(e);
 	}
@@ -19112,6 +19123,6 @@ var uv = class {
 function dv() {
 	if (document.getElementById("fork-sdk-styles")) return;
 	let e = document.createElement("style");
-	e.id = "fork-sdk-styles", e.textContent = "\n.pin{position:fixed;pointer-events:none;transform:translate(-50%,-100%);font:600 11px ui-monospace,'IBM Plex Mono',monospace;letter-spacing:.06em;text-transform:uppercase;padding:4px 8px;border-radius:4px;color:#fff;white-space:nowrap;z-index:3}\n.pin.cafe{background:#d9472b}.pin.rival{background:#1f6f6b}.pin span{opacity:.8;font-weight:400;margin-left:6px}", document.head.appendChild(e);
+	e.id = "fork-sdk-styles", e.textContent = "\n.fork-pin{position:absolute;pointer-events:none;transform:translate(-50%,-100%);font:600 11px ui-monospace,'IBM Plex Mono',monospace;letter-spacing:.06em;text-transform:uppercase;padding:4px 8px;border-radius:4px;color:#fff;white-space:nowrap;z-index:3}\n.fork-pin.cafe{background:#d9472b}.fork-pin.rival{background:#1f6f6b}.fork-pin span{opacity:.8;font-weight:400;margin-left:6px}", document.head.appendChild(e);
 }
 export { iv as DEFAULT_RADIUS_M, uv as ForkMap, av as MAX_RADIUS_M, cv as connectFork, sv as pull };

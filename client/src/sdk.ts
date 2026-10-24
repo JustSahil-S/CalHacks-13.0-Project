@@ -333,6 +333,12 @@ export class ForkMap {
     this.setRadius(this.radiusM);
   }
 
+  /** Stop and remove the map (call when your app unmounts it). */
+  dispose() {
+    this.playing = false;
+    this.scene.dispose();
+  }
+
   /** Zoom to the café's streets ('street', people readable) or out to the whole radius ('radius'). */
   frame(mode: 'street' | 'radius') {
     this.scene.frame(mode);
@@ -449,7 +455,7 @@ function injectPinStyles() {
   const s = document.createElement('style');
   s.id = 'fork-sdk-styles';
   s.textContent = `
-.pin{position:fixed;pointer-events:none;transform:translate(-50%,-100%);font:600 11px ui-monospace,'IBM Plex Mono',monospace;letter-spacing:.06em;text-transform:uppercase;padding:4px 8px;border-radius:4px;color:#fff;white-space:nowrap;z-index:3}
-.pin.cafe{background:#d9472b}.pin.rival{background:#1f6f6b}.pin span{opacity:.8;font-weight:400;margin-left:6px}`;
+.fork-pin{position:absolute;pointer-events:none;transform:translate(-50%,-100%);font:600 11px ui-monospace,'IBM Plex Mono',monospace;letter-spacing:.06em;text-transform:uppercase;padding:4px 8px;border-radius:4px;color:#fff;white-space:nowrap;z-index:3}
+.fork-pin.cafe{background:#d9472b}.fork-pin.rival{background:#1f6f6b}.fork-pin span{opacity:.8;font-weight:400;margin-left:6px}`;
   document.head.appendChild(s);
 }

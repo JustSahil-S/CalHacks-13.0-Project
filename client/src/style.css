@@ -251,8 +251,8 @@ button.icon { width: 36px; height: 36px; padding: 0; font-size: 15px; border-rad
 }
 
 /* Floating labels over the café and rival */
-.pin {
-  position: fixed;
+.fork-pin {
+  position: absolute;
   pointer-events: none;
   transform: translate(-50%, -100%);
   font: 600 11px var(--mono);
@@ -264,9 +264,9 @@ button.icon { width: 36px; height: 36px; padding: 0; font-size: 15px; border-rad
   white-space: nowrap;
   z-index: 3;
 }
-.pin.cafe { background: var(--cafe); }
-.pin.rival { background: var(--rival); }
-.pin span { opacity: 0.8; font-weight: 400; margin-left: 6px; }
+.fork-pin.cafe { background: var(--cafe); }
+.fork-pin.rival { background: var(--rival); }
+.fork-pin span { opacity: 0.8; font-weight: 400; margin-left: 6px; }
 
 @media (max-width: 900px) {
   .dossier { width: auto; right: 20px; bottom: auto; max-height: 45%; }

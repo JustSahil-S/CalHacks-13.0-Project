@@ -82,6 +82,10 @@ export class IsoScene {
   private pins: { el: HTMLElement; world: THREE.Vector3 }[] = [];
   onPick: (index: number | null) => void = () => {};
   onFrame: (dt: number) => void = () => {};
+  private pinLayer = document.createElement('div');
+  private alive = true;
+  private observer: ResizeObserver | null = null;
+  private onWindowResize = () => this.resize();
 
   constructor(private host: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -90,6 +94,10 @@ export class IsoScene {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     host.appendChild(this.renderer.domElement);
+    // Labels live in a layer inside the host, so they stay within the map and leave with it.
+    if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+    this.pinLayer.style.cssText = 'position:absolute;inset:0;overflow:hidden;pointer-events:none';
+    host.appendChild(this.pinLayer);
 
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -40000, 40000);
     this.scene.add(this.model);
@@ -115,12 +123,16 @@ export class IsoScene {
     this.scene.add(this.selectedRing);
 
     this.bindControls();
-    window.addEventListener('resize', () => this.resize());
+    window.addEventListener('resize', this.onWindowResize);
     // The host can change size without the window doing so (panels, React layouts mounting at 0x0).
-    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => this.resize()).observe(this.host);
+    if (typeof ResizeObserver !== 'undefined') {
+      this.observer = new ResizeObserver(() => this.resize());
+      this.observer.observe(this.host);
+    }
     this.resize();
     let last = performance.now();
     const loop = (now: number) => {
+      if (!this.alive) return;
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
       this.azimuth += (this.azimuthGoal - this.azimuth) * Math.min(1, dt * 8);
@@ -135,6 +147,17 @@ export class IsoScene {
       requestAnimationFrame(loop);
     };
     requestAnimationFrame(loop);
+  }
+
+  /** Stop drawing and remove the canvas and labels (for apps that unmount the map). */
+  dispose() {
+    this.alive = false;
+    window.removeEventListener('resize', this.onWindowResize);
+    this.observer?.disconnect();
+    this.clearPins();
+    this.pinLayer.remove();
+    this.renderer.dispose();
+    this.renderer.domElement.remove();
   }
 
   /** Rotate the model a quarter turn; the view stays isometric. */
@@ -390,14 +413,14 @@ export class IsoScene {
 
   private addPin(kind: 'cafe' | 'rival', name: string, note: string, world: THREE.Vector3) {
     const el = document.createElement('div');
-    el.className = `pin ${kind}`;
+    el.className = `fork-pin ${kind}`;
     el.textContent = name;
     if (note) {
       const s = document.createElement('span');
       s.textContent = note;
       el.appendChild(s);
     }
-    document.body.appendChild(el);
+    this.pinLayer.appendChild(el);
     this.pins.push({ el, world });
   }
 
@@ -419,11 +442,11 @@ export class IsoScene {
   }
 
   private updatePins() {
-    const rect = this.renderer.domElement.getBoundingClientRect();
+    const w = this.host.clientWidth, h = this.host.clientHeight;
     for (const p of this.pins) {
       const v = p.world.clone().project(this.camera);
-      p.el.style.left = `${rect.left + ((v.x + 1) / 2) * rect.width}px`;
-      p.el.style.top = `${rect.top + ((1 - v.y) / 2) * rect.height - 6}px`;
+      p.el.style.left = `${((v.x + 1) / 2) * w}px`;
+      p.el.style.top = `${((1 - v.y) / 2) * h - 6}px`;
     }
   }
 
