@@ -46,12 +46,37 @@ export const AreaMap = __t.object("AreaMap", {
 });
 export type AreaMap = __Infer<typeof AreaMap>;
 
+export const BuildCard = __t.object("BuildCard", {
+  buildId: __t.u64(),
+  universeId: __t.u64(),
+  query: __t.string(),
+  name: __t.string(),
+  address: __t.string(),
+  rating: __t.f64(),
+  reviewsCount: __t.u32(),
+  cutoffDate: __t.string(),
+  status: __t.string(),
+  detail: __t.string(),
+  batchesDone: __t.u32(),
+  batchesTotal: __t.u32(),
+  menuSource: __t.string(),
+  mapReady: __t.bool(),
+});
+export type BuildCard = __Infer<typeof BuildCard>;
+
 export const BuildJob = __t.object("BuildJob", {
   scheduledId: __t.u64(),
   scheduledAt: __t.scheduleAt(),
   buildId: __t.u64(),
 });
 export type BuildJob = __Infer<typeof BuildJob>;
+
+export const BuildOwner = __t.object("BuildOwner", {
+  buildId: __t.u64(),
+  identity: __t.identity(),
+  createdAt: __t.timestamp(),
+});
+export type BuildOwner = __Infer<typeof BuildOwner>;
 
 export const Cafe = __t.object("Cafe", {
   universeId: __t.u64(),
@@ -218,6 +243,11 @@ export const MenuSource = __t.object("MenuSource", {
   detail: __t.string(),
 });
 export type MenuSource = __Infer<typeof MenuSource>;
+
+export const Partner = __t.object("Partner", {
+  identity: __t.identity(),
+});
+export type Partner = __Infer<typeof Partner>;
 
 export const ProfileJob = __t.object("ProfileJob", {
   scheduledId: __t.u64(),

@@ -4,6 +4,7 @@ import { t, SenderError } from 'spacetimedb/server';
 import { ScheduleAt } from 'spacetimedb';
 import spacetimedb, { buildJob, clockJob, decisionJob, mapJob, profileJob, rivalJob } from './schema';
 import { fetchAreaMap } from './areamap';
+import { syncCard } from './cards';
 import { callClaude } from './claude';
 import { advanceBuild, advanceRivalScan, fixedCosts, inspectMenuCrawl, nominalRevenuePerDay, profileBatch, SCAN } from './pipeline';
 import { DEFAULT_RADIUS_M, MAX_RADIUS_M } from './rivals';
@@ -75,6 +76,12 @@ function parseJson<T>(raw: string, what: string): T {
 }
 
 // ---- Twins and universes ---------------------------------------------------
+
+// Admin: rebuild every build_card row (after adding the table, or to repair it).
+export const sync_cards = spacetimedb.reducer(ctx => {
+  requireAdmin(ctx);
+  for (const b of ctx.db.twinBuild.iter()) syncCard(ctx, b.id);
+});
 
 // Admin: re-set rent and wages on every built twin from its own revenue (see fixedCosts).
 export const refit_costs = spacetimedb.reducer(ctx => {
@@ -245,33 +252,68 @@ export const start_twin_build = spacetimedb.reducer(
       if (!m.key || !m.name || !(m.priceCents > 0)) throw new SenderError(`bad menu item ${JSON.stringify(m)}`);
     }
     if (cutoffDate && !/^\d{4}-\d{2}-\d{2}$/.test(cutoffDate)) throw new SenderError('cutoffDate must be YYYY-MM-DD');
-    const b = ctx.db.twinBuild.insert({
-      id: 0n,
-      query,
-      label,
-      cutoffDate,
-      menuJson,
-      status: 'queued',
-      detail: 'Queued',
-      placeRunId: '',
-      reviewsRunId: '',
-      competitorsRunId: '',
-      placeJson: '',
-      reviewsJson: '',
-      competitorsJson: '',
-      batchesTotal: 0,
-      batchesDone: 0,
-      twinJson: '',
-      universeId: 0n,
-    });
-    ctx.db.buildOwner.insert({ buildId: b.id, identity: ctx.sender, createdAt: ctx.timestamp });
-    ctx.db.buildJob.insert({
-      scheduledId: 0n,
-      scheduledAt: ScheduleAt.time(ctx.timestamp.microsSinceUnixEpoch),
-      buildId: b.id,
-    });
+    queueBuild(ctx, query, label, menuJson, cutoffDate);
   }
 );
+
+// Anyone can add their café, within limits that keep scraping and Claude costs bounded.
+const PUBLIC_BUILDS_PER_PERSON_PER_HOUR = 2;
+const PUBLIC_BUILDS_PER_HOUR = 6;
+const PUBLIC_BUILDS_PER_DAY = 20;
+const normQuery = (q: string) => q.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+/** Public: build a twin of a café from a Google Maps link or "name, address, city". */
+export const add_cafe = spacetimedb.reducer({ query: t.string() }, (ctx, { query }) => {
+  const q = query.trim();
+  if (q.length < 3 || q.length > 300) throw new SenderError('Paste a Google Maps link or the café name, street and city.');
+  // Same café already built or on its way: reuse it instead of paying for it twice.
+  const want = normQuery(q);
+  for (const b of ctx.db.twinBuild.iter()) {
+    if (b.cutoffDate === '' && b.status !== 'failed' && normQuery(b.query) === want) return;
+  }
+  const builder = isAdmin(ctx) || ctx.db.partner.identity.find(ctx.sender) !== null;
+  if (builder) requireBuilder(ctx);
+  else {
+    const now = ctx.timestamp.microsSinceUnixEpoch;
+    const owners = [...ctx.db.buildOwner.iter()];
+    const since = (micros: bigint) => owners.filter(o => o.createdAt.microsSinceUnixEpoch > now - micros);
+    const hour = since(3_600_000_000n);
+    if (hour.filter(o => o.identity.isEqual(ctx.sender)).length >= PUBLIC_BUILDS_PER_PERSON_PER_HOUR)
+      throw new SenderError('You can add 2 cafés per hour. Try again a little later.');
+    if (hour.length >= PUBLIC_BUILDS_PER_HOUR) throw new SenderError('Lots of cafés are being added right now. Try again in a few minutes.');
+    if (since(86_400_000_000n).length >= PUBLIC_BUILDS_PER_DAY) throw new SenderError('Today’s café limit is reached. Try again tomorrow.');
+  }
+  queueBuild(ctx, q, '', '[]', '');
+});
+
+function queueBuild(ctx: Ctx, query: string, label: string, menuJson: string, cutoffDate: string) {
+  const b = ctx.db.twinBuild.insert({
+    id: 0n,
+    query,
+    label,
+    cutoffDate,
+    menuJson,
+    status: 'queued',
+    detail: 'Queued',
+    placeRunId: '',
+    reviewsRunId: '',
+    competitorsRunId: '',
+    placeJson: '',
+    reviewsJson: '',
+    competitorsJson: '',
+    batchesTotal: 0,
+    batchesDone: 0,
+    twinJson: '',
+    universeId: 0n,
+  });
+  ctx.db.buildOwner.insert({ buildId: b.id, identity: ctx.sender, createdAt: ctx.timestamp });
+  ctx.db.buildJob.insert({
+    scheduledId: 0n,
+    scheduledAt: ScheduleAt.time(ctx.timestamp.microsSinceUnixEpoch),
+    buildId: b.id,
+  });
+  syncCard(ctx, b.id);
+}
 
 /** Scrape a café's reviews only (no customers), to look for price changes worth backtesting. */
 export const start_review_scan = spacetimedb.reducer({ query: t.string() }, (ctx, { query }) => {
@@ -313,6 +355,7 @@ export const retry_build = spacetimedb.reducer({ buildId: t.u64() }, (ctx, { bui
     competitorsRunId: '',
   });
   ctx.db.buildJob.insert({ scheduledId: 0n, scheduledAt: ScheduleAt.time(ctx.timestamp.microsSinceUnixEpoch), buildId });
+  syncCard(ctx, buildId);
 });
 
 /** Rebuild a finished build's twin from its stored data (no new scraping or Claude calls). */
@@ -322,6 +365,7 @@ export const reassemble_build = spacetimedb.reducer({ buildId: t.u64() }, (ctx, 
   if (!b || !b.placeJson) throw new SenderError(`build ${buildId} has no scraped data`);
   ctx.db.twinBuild.id.update({ ...b, status: 'assembling', detail: 'Re-assembling from stored data' });
   ctx.db.buildJob.insert({ scheduledId: 0n, scheduledAt: ScheduleAt.time(ctx.timestamp.microsSinceUnixEpoch), buildId });
+  syncCard(ctx, buildId);
 });
 
 /** (Re)fetch the OpenStreetMap neighborhood for a finished build. Runs automatically after a build. */
@@ -345,6 +389,7 @@ export const build_area_map = spacetimedb.procedure(
         const row = { buildId, status, detail, mapJson };
         if (tx.db.areaMap.buildId.find(buildId)) tx.db.areaMap.buildId.update(row);
         else tx.db.areaMap.insert(row);
+        syncCard(tx, buildId);
       });
     save('fetching', 'Fetching the neighborhood from OpenStreetMap', '');
     try {
@@ -394,7 +439,11 @@ export const advance_build = spacetimedb.procedure(
   { job: buildJob.rowType },
   t.unit(),
   (ctx, { job }) => {
-    advanceBuild(ctx, job.buildId);
+    try {
+      advanceBuild(ctx, job.buildId);
+    } finally {
+      ctx.withTx(tx => syncCard(tx, job.buildId));
+    }
     return {};
   }
 );
@@ -404,7 +453,11 @@ export const profile_batch = spacetimedb.procedure(
   { job: profileJob.rowType },
   t.unit(),
   (ctx, { job }) => {
-    profileBatch(ctx, job.buildId, job.payloadJson);
+    try {
+      profileBatch(ctx, job.buildId, job.payloadJson);
+    } finally {
+      ctx.withTx(tx => syncCard(tx, job.buildId));
+    }
     return {};
   }
 );

@@ -280,6 +280,28 @@ export const menuSource = table(
   }
 );
 
+// One light row per build for clients: what a café picker and a build progress line need,
+// without the scraped reviews and customer JSON that twin_build carries.
+export const buildCard = table(
+  { name: 'build_card', public: true },
+  {
+    buildId: t.u64().primaryKey(),
+    universeId: t.u64(),
+    query: t.string(),
+    name: t.string(),
+    address: t.string(),
+    rating: t.f64(), // 0 = unknown
+    reviewsCount: t.u32(),
+    cutoffDate: t.string(),
+    status: t.string(),
+    detail: t.string(),
+    batchesDone: t.u32(),
+    batchesTotal: t.u32(),
+    menuSource: t.string(),
+    mapReady: t.bool(),
+  }
+);
+
 // Claude's reading of one real review (one reviewer -> one customer profile).
 export const twinProfile = table(
   { name: 'twin_profile', public: true },
@@ -437,6 +459,7 @@ const spacetimedb = schema(
     decisionJob,
     llmLog,
     twinBuild,
+    buildCard,
     menuSource,
     twinProfile,
     buildJob,

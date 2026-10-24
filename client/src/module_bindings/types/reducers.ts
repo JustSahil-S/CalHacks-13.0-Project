@@ -6,12 +6,15 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
+import AddCafeReducer from "../add_cafe_reducer";
 import ClaimAdminReducer from "../claim_admin_reducer";
+import ClaimPartnerReducer from "../claim_partner_reducer";
 import ClearCacheReducer from "../clear_cache_reducer";
 import FetchAreaMapReducer from "../fetch_area_map_reducer";
 import LoadTwinReducer from "../load_twin_reducer";
 import PauseUniverseReducer from "../pause_universe_reducer";
 import ReassembleBuildReducer from "../reassemble_build_reducer";
+import RefitCostsReducer from "../refit_costs_reducer";
 import RefreshRivalsReducer from "../refresh_rivals_reducer";
 import ResetAllReducer from "../reset_all_reducer";
 import RetryBuildReducer from "../retry_build_reducer";
@@ -23,13 +26,17 @@ import StartExperimentRReducer from "../start_experiment_r_reducer";
 import StartReviewScanReducer from "../start_review_scan_reducer";
 import StartTwinBuildReducer from "../start_twin_build_reducer";
 import StopClockReducer from "../stop_clock_reducer";
+import SyncCardsReducer from "../sync_cards_reducer";
 
+export type AddCafeParams = __Infer<typeof AddCafeReducer>;
 export type ClaimAdminParams = __Infer<typeof ClaimAdminReducer>;
+export type ClaimPartnerParams = __Infer<typeof ClaimPartnerReducer>;
 export type ClearCacheParams = __Infer<typeof ClearCacheReducer>;
 export type FetchAreaMapParams = __Infer<typeof FetchAreaMapReducer>;
 export type LoadTwinParams = __Infer<typeof LoadTwinReducer>;
 export type PauseUniverseParams = __Infer<typeof PauseUniverseReducer>;
 export type ReassembleBuildParams = __Infer<typeof ReassembleBuildReducer>;
+export type RefitCostsParams = __Infer<typeof RefitCostsReducer>;
 export type RefreshRivalsParams = __Infer<typeof RefreshRivalsReducer>;
 export type ResetAllParams = __Infer<typeof ResetAllReducer>;
 export type RetryBuildParams = __Infer<typeof RetryBuildReducer>;
@@ -41,4 +48,5 @@ export type StartExperimentRParams = __Infer<typeof StartExperimentRReducer>;
 export type StartReviewScanParams = __Infer<typeof StartReviewScanReducer>;
 export type StartTwinBuildParams = __Infer<typeof StartTwinBuildReducer>;
 export type StopClockParams = __Infer<typeof StopClockReducer>;
+export type SyncCardsParams = __Infer<typeof SyncCardsReducer>;
 

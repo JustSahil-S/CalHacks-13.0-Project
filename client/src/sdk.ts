@@ -27,6 +27,13 @@ export interface Fork {
   /** Replace the subscription in a named slot with these SQL queries. Resolves when applied. */
   subscribe(slot: string, queries: string[]): Promise<void>;
   cafes(): CafeSummary[];
+  /** Opening hours of a café (loads on first call; null until then, onChange fires when ready). */
+  hours(universeId: bigint): { open: number; close: number } | null;
+  /** Ask the engine to build a twin of a café (Google Maps link or "name, street, city").
+   *  Resolves with the build id; follow it with builds(). Rejects with a readable limit message. */
+  addCafe(query: string): Promise<bigint | null>;
+  /** Builds that aren't ready yet (or failed), newest first, with live progress. */
+  builds(): BuildProgress[];
   menu(universeId: bigint): { key: string; name: string; category: string; priceCents: number }[];
   rivals(buildId: bigint): { key: string; name: string; x: number; y: number; distanceM: number; rating: number; priceIndex: number; weight: number }[];
   experiments(rootUniverseId: bigint): { id: bigint; label: string; status: string; copies: number; days: number; radiusM: number }[];
@@ -39,6 +46,17 @@ export interface Fork {
   runExperiment(a: { rootUniverseId: bigint; label: string; prices: Record<string, number>; radiusM?: number; copies?: number; days?: number }): Promise<void>;
 }
 
+export interface BuildProgress {
+  buildId: bigint;
+  query: string;
+  name: string;
+  status: string; // queued | place | scraping | profiling | assembling | done | failed
+  detail: string; // a readable line, e.g. "Claude read 3 of 5 review batches"
+  progress: number; // 0..1, rough
+  mine: boolean; // started from this browser
+  ready: boolean; // done and its map is ready: it now appears in cafes()
+}
+
 export interface CafeSummary {
   buildId: bigint;
   universeId: bigint;
@@ -49,6 +67,8 @@ export interface CafeSummary {
   backtestCutoff: string; // '' for a current café
   menuSource: string; // website | menu photo | estimated | provided
   mapReady: boolean;
+  customers: number; // simulated customers
+  reviewers: number; // real Google reviewers they were built from
 }
 
 export interface ExperimentSummary {
@@ -93,16 +113,14 @@ export function connectFork(opts: { host?: string; db?: string } = {}): Promise<
           }
           const fork = makeFork(conn, identity.toHexString());
           fork
+            // Light tables only; menus, hours and maps load per café when asked for.
             .subscribe('base', [
-              'SELECT * FROM twin_build',
-              'SELECT * FROM area_map',
+              'SELECT * FROM build_card',
+              'SELECT * FROM build_owner',
               'SELECT * FROM universe',
               'SELECT * FROM experiment',
               'SELECT * FROM experiment_result',
               'SELECT * FROM experiment_radius',
-              'SELECT * FROM cafe',
-              'SELECT * FROM menu_item',
-              'SELECT * FROM menu_source',
               'SELECT * FROM rival',
             ])
             .then(() => resolve(fork));
@@ -130,6 +148,15 @@ function makeFork(conn: DbConnection, identity: string): Fork {
     t?.onDelete?.(changed);
   }
   const slots = new Map<string, SubscriptionHandle>();
+  const pending = new Map<string, () => void>();
+  const loaded = new Set<string>();
+  // Subscribe once per slot, in the background; onChange fires when the rows arrive.
+  const lazy = (slot: string, queries: string[]) => {
+    if (loaded.has(slot)) return;
+    loaded.add(slot);
+    fork.subscribe(slot, queries).catch(() => loaded.delete(slot));
+  };
+  const norm = (q: string) => q.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   const universes = (expId: bigint) => [...conn.db.universe.iter()].filter(u => u.experimentId === expId);
 
   const fork: Fork = {
@@ -140,32 +167,87 @@ function makeFork(conn: DbConnection, identity: string): Fork {
       return () => listeners.delete(cb);
     },
     subscribe(slot, queries) {
+      // A newer subscription in the same slot replaces this one; settle the old promise so
+      // nothing awaiting it hangs (fast café switches, React mounting twice).
+      pending.get(slot)?.();
+      pending.delete(slot);
       slots.get(slot)?.unsubscribe();
       slots.delete(slot);
       if (!queries.length) return Promise.resolve();
-      return new Promise(res => {
-        slots.set(slot, conn.subscriptionBuilder().onApplied(() => (changed(), res())).subscribe(queries));
+      return new Promise((res, rej) => {
+        const settle = () => {
+          if (pending.get(slot) === settle) pending.delete(slot);
+          res();
+        };
+        pending.set(slot, settle);
+        slots.set(
+          slot,
+          conn
+            .subscriptionBuilder()
+            .onApplied(() => (changed(), settle()))
+            .onError(ctx => {
+              if (pending.get(slot) === settle) pending.delete(slot);
+              rej(new Error(`Live data failed to load: ${(ctx as any)?.event?.message ?? 'subscription error'}`));
+            })
+            .subscribe(queries)
+        );
       });
     },
     cafes() {
-      return [...conn.db.twinBuild.iter()]
-        .filter(b => b.status === 'done' && b.universeId !== 0n)
-        .map(b => {
-          const place = b.placeJson ? JSON.parse(b.placeJson) : {};
+      return [...conn.db.buildCard.iter()]
+        .filter(c => c.status === 'done' && c.universeId !== 0n && c.cutoffDate !== 'scan')
+        .map(c => {
+          const m = /(\d+) customers from (\d+)/.exec(c.detail);
           return {
-            buildId: b.id,
-            universeId: b.universeId,
-            name: conn.db.cafe.universeId.find(b.universeId)?.name ?? place.title ?? b.query,
-            address: place.address ?? '',
-            rating: place.totalScore ?? null,
-            reviewsCount: place.reviewsCount ?? null,
-            backtestCutoff: b.cutoffDate === 'scan' ? '' : b.cutoffDate,
-            menuSource: conn.db.menuSource.buildId.find(b.id)?.source ?? 'provided',
-            mapReady: conn.db.areaMap.buildId.find(b.id)?.status === 'ready',
+            buildId: c.buildId,
+            universeId: c.universeId,
+            name: c.name,
+            address: c.address,
+            rating: c.rating || null,
+            reviewsCount: c.reviewsCount || null,
+            backtestCutoff: c.cutoffDate,
+            menuSource: c.menuSource || 'provided',
+            mapReady: c.mapReady,
+            customers: m ? Number(m[1]) : 200,
+            reviewers: m ? Number(m[2]) : 0,
           };
         });
     },
+    hours(universeId) {
+      lazy(`cafe:${universeId}`, [`SELECT * FROM cafe WHERE universe_id = ${universeId}`]);
+      const c = conn.db.cafe.universeId.find(universeId);
+      return c ? { open: c.openHour, close: c.closeHour } : null;
+    },
+    async addCafe(query) {
+      await conn.reducers.addCafe({ query });
+      const want = norm(query);
+      const mine = [...conn.db.buildCard.iter()].filter(c => norm(c.query) === want && c.status !== 'failed');
+      return mine.sort((a, b) => Number(b.buildId - a.buildId))[0]?.buildId ?? null;
+    },
+    builds() {
+      const me = new Set([...conn.db.buildOwner.iter()].filter(o => o.identity.toHexString() === identity).map(o => o.buildId));
+      const step: Record<string, number> = { queued: 0.03, place: 0.1, scraping: 0.25, profiling: 0.45, assembling: 0.9, done: 1, failed: 0 };
+      return [...conn.db.buildCard.iter()]
+        .filter(c => c.cutoffDate === '' && (c.status !== 'done' || me.has(c.buildId)))
+        .map(c => ({
+          buildId: c.buildId,
+          query: c.query,
+          name: c.name,
+          status: c.status,
+          detail: c.detail,
+          progress:
+            c.status === 'profiling' && c.batchesTotal
+              ? 0.45 + 0.4 * (c.batchesDone / c.batchesTotal)
+              : c.status === 'done' && !c.mapReady
+                ? 0.95
+                : step[c.status] ?? 0.05,
+          mine: me.has(c.buildId),
+          ready: c.status === 'done' && c.mapReady,
+        }))
+        .sort((a, b) => Number(b.buildId - a.buildId));
+    },
     menu(universeId) {
+      lazy(`menu:${universeId}`, [`SELECT * FROM menu_item WHERE universe_id = ${universeId}`]);
       return [...conn.db.menuItem.iter()]
         .filter(m => m.universeId === universeId)
         .map(m => ({ key: m.key, name: m.name, category: m.category, priceCents: m.priceCents }));
@@ -298,6 +380,7 @@ export class ForkMap {
   private dayFloat = 0;
   private selected: number | null = null;
   private dirty = true;
+  private showCall = 0;
   playing = false;
   speed = 1;
   radiusM = DEFAULT_RADIUS_M;
@@ -317,18 +400,25 @@ export class ForkMap {
 
   /** Load a café's neighborhood, customers and rivals. */
   async showCafe(buildId: bigint) {
+    const call = ++this.showCall;
     const conn = this.fork.conn;
-    const b = conn.db.twinBuild.id.find(buildId);
-    const area = conn.db.areaMap.buildId.find(buildId);
-    if (!b || !area || area.status !== 'ready') throw new Error('This café has no neighborhood map yet.');
+    const card = conn.db.buildCard.buildId.find(buildId);
+    if (!card || card.status !== 'done' || !card.mapReady) throw new Error('This café has no neighborhood map yet.');
     this.buildId = buildId;
-    this.root = b.universeId;
+    this.root = card.universeId;
     this.universeId = null;
+    // Only this café's map and customers come down, not every café's.
+    await Promise.all([
+      this.fork.subscribe('map-area', [`SELECT * FROM area_map WHERE build_id = ${buildId}`]),
+      this.fork.subscribe('map-root', [`SELECT * FROM agent WHERE universe_id = ${card.universeId}`]),
+    ]);
+    if (call !== this.showCall) return; // another café was picked meanwhile
+    const area = conn.db.areaMap.buildId.find(buildId);
+    if (!area || area.status !== 'ready') throw new Error('This café has no neighborhood map yet.');
     const map: AreaMap = JSON.parse(area.mapJson);
     this.hood = new Neighborhood(map);
     this.scene.setMap(map);
     this.crowd = new Crowd(this.scene, this.hood);
-    await this.fork.subscribe('map-root', [`SELECT * FROM agent WHERE universe_id = ${this.root}`]);
     this.crowd.setAgents([...conn.db.agent.iter()].filter(a => a.universeId === this.root).map(a => a.key));
     this.setRadius(this.radiusM);
   }

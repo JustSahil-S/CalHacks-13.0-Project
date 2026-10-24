@@ -34,12 +34,15 @@ import {
 } from "spacetimedb";
 
 // Import all reducer arg schemas
+import AddCafeReducer from "./add_cafe_reducer";
 import ClaimAdminReducer from "./claim_admin_reducer";
+import ClaimPartnerReducer from "./claim_partner_reducer";
 import ClearCacheReducer from "./clear_cache_reducer";
 import FetchAreaMapReducer from "./fetch_area_map_reducer";
 import LoadTwinReducer from "./load_twin_reducer";
 import PauseUniverseReducer from "./pause_universe_reducer";
 import ReassembleBuildReducer from "./reassemble_build_reducer";
+import RefitCostsReducer from "./refit_costs_reducer";
 import RefreshRivalsReducer from "./refresh_rivals_reducer";
 import ResetAllReducer from "./reset_all_reducer";
 import RetryBuildReducer from "./retry_build_reducer";
@@ -51,6 +54,7 @@ import StartExperimentRReducer from "./start_experiment_r_reducer";
 import StartReviewScanReducer from "./start_review_scan_reducer";
 import StartTwinBuildReducer from "./start_twin_build_reducer";
 import StopClockReducer from "./stop_clock_reducer";
+import SyncCardsReducer from "./sync_cards_reducer";
 
 // Import all procedure arg schemas
 import * as InspectMenuCrawlProcedure from "./inspect_menu_crawl_procedure";
@@ -59,6 +63,8 @@ import * as InspectMenuCrawlProcedure from "./inspect_menu_crawl_procedure";
 import AdminRow from "./admin_table";
 import AgentRow from "./agent_table";
 import AreaMapRow from "./area_map_table";
+import BuildCardRow from "./build_card_table";
+import BuildOwnerRow from "./build_owner_table";
 import CafeRow from "./cafe_table";
 import CompetitorRow from "./competitor_table";
 import DailyMetricRow from "./daily_metric_table";
@@ -72,6 +78,7 @@ import LlmLogRow from "./llm_log_table";
 import MemoryRow from "./memory_table";
 import MenuItemRow from "./menu_item_table";
 import MenuSourceRow from "./menu_source_table";
+import PartnerRow from "./partner_table";
 import ReviewRow from "./review_table";
 import RivalRow from "./rival_table";
 import RivalScanRow from "./rival_scan_table";
@@ -123,6 +130,28 @@ const tablesSchema = __schema({
       { name: 'area_map_build_id_key', constraint: 'unique', columns: ['buildId'] },
     ],
   }, AreaMapRow),
+  buildCard: __table({
+    name: 'build_card',
+    indexes: [
+      { accessor: 'buildId', name: 'build_card_build_id_idx_btree', algorithm: 'btree', columns: [
+        'buildId',
+      ] },
+    ],
+    constraints: [
+      { name: 'build_card_build_id_key', constraint: 'unique', columns: ['buildId'] },
+    ],
+  }, BuildCardRow),
+  buildOwner: __table({
+    name: 'build_owner',
+    indexes: [
+      { accessor: 'buildId', name: 'build_owner_build_id_idx_btree', algorithm: 'btree', columns: [
+        'buildId',
+      ] },
+    ],
+    constraints: [
+      { name: 'build_owner_build_id_key', constraint: 'unique', columns: ['buildId'] },
+    ],
+  }, BuildOwnerRow),
   cafe: __table({
     name: 'cafe',
     indexes: [
@@ -284,6 +313,17 @@ const tablesSchema = __schema({
       { name: 'menu_source_build_id_key', constraint: 'unique', columns: ['buildId'] },
     ],
   }, MenuSourceRow),
+  partner: __table({
+    name: 'partner',
+    indexes: [
+      { accessor: 'identity', name: 'partner_identity_idx_btree', algorithm: 'btree', columns: [
+        'identity',
+      ] },
+    ],
+    constraints: [
+      { name: 'partner_identity_key', constraint: 'unique', columns: ['identity'] },
+    ],
+  }, PartnerRow),
   review: __table({
     name: 'review',
     indexes: [
@@ -413,12 +453,15 @@ const tablesSchema = __schema({
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
+  __reducerSchema("add_cafe", AddCafeReducer),
   __reducerSchema("claim_admin", ClaimAdminReducer),
+  __reducerSchema("claim_partner", ClaimPartnerReducer),
   __reducerSchema("clear_cache", ClearCacheReducer),
   __reducerSchema("fetch_area_map", FetchAreaMapReducer),
   __reducerSchema("load_twin", LoadTwinReducer),
   __reducerSchema("pause_universe", PauseUniverseReducer),
   __reducerSchema("reassemble_build", ReassembleBuildReducer),
+  __reducerSchema("refit_costs", RefitCostsReducer),
   __reducerSchema("refresh_rivals", RefreshRivalsReducer),
   __reducerSchema("reset_all", ResetAllReducer),
   __reducerSchema("retry_build", RetryBuildReducer),
@@ -430,6 +473,7 @@ const reducersSchema = __reducers(
   __reducerSchema("start_review_scan", StartReviewScanReducer),
   __reducerSchema("start_twin_build", StartTwinBuildReducer),
   __reducerSchema("stop_clock", StopClockReducer),
+  __reducerSchema("sync_cards", SyncCardsReducer),
 );
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */
