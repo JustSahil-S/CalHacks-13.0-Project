@@ -2639,7 +2639,7 @@ Return every customer exactly once. Keep each reason under 15 words.`;
 
 const SCENARIO_MARKET_SYSTEM = `You simulate how cafe customers react when store s1 changes its menu. Each customer is a persona built from real Google reviews and stands for a group of similar people.
 You get every store's menu as it is today, each customer's baseline plan for today (made with s1's usual menu), and the list of changes s1 has made.
-Return an updated plan only for customers who would act differently because of these changes: visit s1 more or less often, switch stores, or order something else or less. A plan gives the chance (0 to 1) of visiting each store today and what they would order there, using only item codes from that store's menu, with at most ${MAX_VISITS_PER_AGENT} stores and chances adding up to at most 1. You must return every customer whose baseline order includes an item that was removed.
+Return an updated plan only for customers who would act differently because of these changes: visit s1 more or less often, switch stores, add an item to their order, or order something else or less. A new item that fills a gap in s1's menu (for example a drink at a store whose regulars want one with their meal) is often added to existing orders, and can draw customers who usually get it elsewhere. A plan gives the chance (0 to 1) of visiting each store today and what they would order there, using only item codes from that store's menu, with at most ${MAX_VISITS_PER_AGENT} stores and chances adding up to at most 1. You must return every customer whose baseline order includes an item that was removed.
 Everyone you don't return keeps their baseline plan and pays s1's new prices. Most people don't notice or care about small changes, so only change a plan when this kind of person really would. A price change mainly affects customers who order that item or a close substitute; leave customers who order other things alone unless the change makes the whole store feel much cheaper or pricier to them. Price-sensitive customers react more to price increases, and a price cut can win customers from other stores. New items only matter to customers who would want them. Return an empty list if nobody is affected. Keep each reason under 15 words and about the change.`;
 
 const MARKET_SCHEMA = {
@@ -2837,6 +2837,11 @@ export const simulate_days = spacetimedb.procedure(
               MARKET_SCHEMA
             );
             customers = id === 0 ? reply.customers : mergePlans(universe.baseline, reply.customers);
+            if (id !== 0) {
+              const changed = Array.isArray(reply.customers) ? reply.customers.length : 0;
+              console.info(`Day ${market.day} of ${universe.name}: ${changed} customers changed their plans`);
+              setJob(ctx, { message: `Day ${market.day} of ${universe.name}: ${changed} customers changed their plans` });
+            }
           }
           ctx.withTx(tx => saveMarketDay(tx, market, universe, { customers }));
         }

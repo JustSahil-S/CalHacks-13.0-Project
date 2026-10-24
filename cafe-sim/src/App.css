@@ -547,6 +547,28 @@ tr.selected td {
   box-shadow: inset 3px 0 0 #dc2626;
 }
 
+.detail-tabs {
+  display: flex;
+  gap: 0.4rem;
+  margin: 0.25rem 0 0.5rem;
+}
+
+.detail-tabs button {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.8rem;
+}
+
+.plan-line {
+  margin-top: 0.2rem;
+}
+
+.base-plan {
+  margin-top: 0.4rem;
+  padding-top: 0.35rem;
+  border-top: 1px dashed rgba(128, 128, 128, 0.4);
+  opacity: 0.85;
+}
+
 .visit-head {
   display: flex;
   flex-wrap: wrap;

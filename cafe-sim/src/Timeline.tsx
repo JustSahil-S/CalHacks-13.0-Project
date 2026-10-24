@@ -246,6 +246,18 @@ function DayDetail({
   // Agents who came to your store in the base universe but not in the scenario
   const lost = comparing ? [...baseVisits.values()].filter(v => !ownVisits.some(o => o.agentId === v.agentId)) : [];
 
+  const [view, setView] = useState<'store' | 'all'>('store');
+  const plansOf = (u: Universe, agentId: number) =>
+    u.visits.filter(v => v.agentId === agentId).sort((a, b) => b.chance - a.chance);
+  const planKey = (visits: SimVisit[]) =>
+    visits
+      .map(v => `${v.placeId}|${visitKey(v)}`)
+      .sort()
+      .join(';');
+  const changedAgents = new Set(
+    comparing ? [...agentsById.keys()].filter(id => planKey(plansOf(base, id)) !== planKey(plansOf(scenario, id))) : [],
+  );
+
   return (
     <div className="day-detail">
       <div>
@@ -317,54 +329,117 @@ function DayDetail({
       </div>
 
       <div>
-        <h4>Who came to your store</h4>
-        <ul className="visit-list">
-          {ownVisits.map(visit => {
-            const agent = agentsById.get(visit.agentId);
-            const before = baseVisits.get(visit.agentId);
-            const changed = comparing && (!before || visitKey(before) !== visitKey(visit));
-            return (
-              <li key={visit.visitId} className={changed ? 'changed' : undefined}>
-                <div className="visit-head">
-                  <strong>{agent?.name ?? 'Customer'}</strong>
-                  <span className="muted">
-                    {agent?.archetype}
-                    {agent && agent.placeId !== ownPlaceId && ` · regular at ${storesById.get(agent.placeId)?.name}`}
-                  </span>
-                </div>
-                <div>
-                  {Math.round(visit.chance * 100)}% chance{' '}
-                  {comparing && before && before.chance !== visit.chance && (
-                    <span className="muted">(was {Math.round(before.chance * 100)}%)</span>
-                  )}{' '}
-                  · ≈{Math.round(visit.customers)} people · {(JSON.parse(visit.itemsJson) as string[]).join(', ')} ·{' '}
-                  {money(visit.spendCents)} each
-                </div>
-                <div className="muted">“{visit.reason}”</div>
-              </li>
-            );
-          })}
-          {lost.map(visit => {
-            const agent = agentsById.get(visit.agentId);
-            const elsewhere = scenario.visits.filter(v => v.agentId === visit.agentId);
-            return (
-              <li key={`lost-${visit.visitId}`} className="lost">
-                <div className="visit-head">
-                  <strong>{agent?.name ?? 'Customer'}</strong>
-                  <span className="muted">{agent?.archetype}</span>
-                </div>
-                <div>
-                  Stopped coming (was {Math.round(visit.chance * 100)}%, ≈{Math.round(visit.customers)} people)
-                  {elsewhere.length > 0 &&
-                    ` · went to ${elsewhere.map(v => storesById.get(v.placeId)?.name ?? 'another store').join(', ')}`}
-                </div>
-                {elsewhere[0] && <div className="muted">“{elsewhere[0].reason}”</div>}
-              </li>
-            );
-          })}
-          {ownVisits.length === 0 && lost.length === 0 && <li className="muted">Nobody is likely to visit today.</li>}
-        </ul>
+        <div className="detail-tabs">
+          <button type="button" className={view === 'store' ? undefined : 'secondary'} onClick={() => setView('store')}>
+            Your store's customers
+          </button>
+          <button type="button" className={view === 'all' ? undefined : 'secondary'} onClick={() => setView('all')}>
+            All customers
+          </button>
+        </div>
+        {comparing && (
+          <p className="muted small">
+            {changedAgents.size === 0
+              ? `Nobody changed their plans because of ${scenarioName}'s menu today.`
+              : `${changedAgents.size} customer${changedAgents.size === 1 ? '' : 's'} changed their plans because of ${scenarioName}'s menu today.`}
+          </p>
+        )}
+        {view === 'all' ? (
+          <ul className="visit-list">
+            {[...agentsById.values()]
+              .sort(
+                (a, b) =>
+                  Number(changedAgents.has(b.agentId)) - Number(changedAgents.has(a.agentId)) ||
+                  Number(b.placeId === ownPlaceId) - Number(a.placeId === ownPlaceId) ||
+                  a.placeId.localeCompare(b.placeId),
+              )
+              .map(agent => {
+                const changed = changedAgents.has(agent.agentId);
+                return (
+                  <li key={agent.agentId} className={changed ? 'changed' : undefined}>
+                    <div className="visit-head">
+                      <strong>{agent.name}</strong>
+                      <span className="muted">
+                        {agent.archetype} · regular at {storesById.get(agent.placeId)?.name}
+                      </span>
+                    </div>
+                    <PlanLines visits={plansOf(shown, agent.agentId)} storesById={storesById} />
+                    {changed && (
+                      <div className="base-plan">
+                        <span className="muted">In the base universe:</span>
+                        <PlanLines visits={plansOf(base, agent.agentId)} storesById={storesById} />
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+          </ul>
+        ) : (
+          <ul className="visit-list">
+            {ownVisits.map(visit => {
+              const agent = agentsById.get(visit.agentId);
+              const before = baseVisits.get(visit.agentId);
+              const changed = comparing && (!before || visitKey(before) !== visitKey(visit));
+              return (
+                <li key={visit.visitId} className={changed ? 'changed' : undefined}>
+                  <div className="visit-head">
+                    <strong>{agent?.name ?? 'Customer'}</strong>
+                    <span className="muted">
+                      {agent?.archetype}
+                      {agent && agent.placeId !== ownPlaceId && ` · regular at ${storesById.get(agent.placeId)?.name}`}
+                    </span>
+                  </div>
+                  <div>
+                    {Math.round(visit.chance * 100)}% chance{' '}
+                    {comparing && before && before.chance !== visit.chance && (
+                      <span className="muted">(was {Math.round(before.chance * 100)}%)</span>
+                    )}{' '}
+                    · ≈{Math.round(visit.customers)} people · {(JSON.parse(visit.itemsJson) as string[]).join(', ')} ·{' '}
+                    {money(visit.spendCents)} each
+                  </div>
+                  <div className="muted">“{visit.reason}”</div>
+                </li>
+              );
+            })}
+            {lost.map(visit => {
+              const agent = agentsById.get(visit.agentId);
+              const elsewhere = scenario.visits.filter(v => v.agentId === visit.agentId);
+              return (
+                <li key={`lost-${visit.visitId}`} className="lost">
+                  <div className="visit-head">
+                    <strong>{agent?.name ?? 'Customer'}</strong>
+                    <span className="muted">{agent?.archetype}</span>
+                  </div>
+                  <div>
+                    Stopped coming (was {Math.round(visit.chance * 100)}%, ≈{Math.round(visit.customers)} people)
+                    {elsewhere.length > 0 &&
+                      ` · went to ${elsewhere.map(v => storesById.get(v.placeId)?.name ?? 'another store').join(', ')}`}
+                  </div>
+                  {elsewhere[0] && <div className="muted">“{elsewhere[0].reason}”</div>}
+                </li>
+              );
+            })}
+            {ownVisits.length === 0 && lost.length === 0 && <li className="muted">Nobody is likely to visit today.</li>}
+          </ul>
+        )}
       </div>
     </div>
+  );
+}
+
+function PlanLines({ visits, storesById }: { visits: SimVisit[]; storesById: Map<string, Business> }) {
+  if (visits.length === 0) return <div className="muted">Not going to any of these stores today.</div>;
+  return (
+    <>
+      {visits.map(visit => (
+        <div key={visit.visitId} className="plan-line">
+          <div>
+            {Math.round(visit.chance * 100)}% {storesById.get(visit.placeId)?.name ?? 'another store'} ·{' '}
+            {(JSON.parse(visit.itemsJson) as string[]).join(', ')} · {money(visit.spendCents)}
+          </div>
+          <div className="muted">“{visit.reason}”</div>
+        </div>
+      ))}
+    </>
   );
 }
