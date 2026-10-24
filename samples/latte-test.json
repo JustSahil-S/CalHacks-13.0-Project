@@ -1,0 +1,11 @@
+{
+  "baseUniverseId": 1,
+  "label": "latte test",
+  "copies": 10,
+  "days": 90,
+  "options": [
+    { "label": "control", "prices": {} },
+    { "label": "oat latte +50c", "prices": { "oat_latte": 675 } },
+    { "label": "drip +$1", "prices": { "drip": 425 } }
+  ]
+}

@@ -1,0 +1,3329 @@
+{
+  "source": "synthetic sample for engine testing; not a real café",
+  "cafe": {
+    "name": "Sample Corner Cafe (synthetic)",
+    "openHour": 7,
+    "closeHour": 18,
+    "servicePerHour": 60,
+    "customerScale": 4,
+    "rentPerDayCents": 40000,
+    "wagesPerDayCents": 90000
+  },
+  "menu": [
+    {
+      "key": "drip",
+      "name": "Drip coffee",
+      "category": "coffee",
+      "priceCents": 325,
+      "unitCostCents": 60
+    },
+    {
+      "key": "latte",
+      "name": "Latte",
+      "category": "coffee",
+      "priceCents": 550,
+      "unitCostCents": 130
+    },
+    {
+      "key": "oat_latte",
+      "name": "Oat latte",
+      "category": "coffee",
+      "priceCents": 625,
+      "unitCostCents": 170
+    },
+    {
+      "key": "cold_brew",
+      "name": "Cold brew",
+      "category": "coffee",
+      "priceCents": 525,
+      "unitCostCents": 110
+    },
+    {
+      "key": "matcha",
+      "name": "Matcha latte",
+      "category": "tea",
+      "priceCents": 650,
+      "unitCostCents": 190
+    },
+    {
+      "key": "croissant",
+      "name": "Croissant",
+      "category": "pastry",
+      "priceCents": 450,
+      "unitCostCents": 140
+    },
+    {
+      "key": "muffin",
+      "name": "Blueberry muffin",
+      "category": "pastry",
+      "priceCents": 400,
+      "unitCostCents": 110
+    },
+    {
+      "key": "bagel",
+      "name": "Bagel and cream cheese",
+      "category": "food",
+      "priceCents": 575,
+      "unitCostCents": 160
+    },
+    {
+      "key": "avo_toast",
+      "name": "Avocado toast",
+      "category": "food",
+      "priceCents": 1300,
+      "unitCostCents": 420
+    }
+  ],
+  "competitors": [
+    {
+      "key": "joes",
+      "name": "Joe's Coffee (synthetic)",
+      "priceIndex": 0.95,
+      "rating": 4.3
+    }
+  ],
+  "customers": [
+    {
+      "key": "c001",
+      "name": "Leo A.",
+      "archetype": "student",
+      "priceSensitivity": 0.87,
+      "visitsPerWeek": 2.5,
+      "loyalty": 0.41,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c002",
+      "name": "Priya B.",
+      "archetype": "student",
+      "priceSensitivity": 0.96,
+      "visitsPerWeek": 3.9,
+      "loyalty": 0.56,
+      "usualOrder": [
+        "cold_brew"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c003",
+      "name": "Eli C.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.53,
+      "visitsPerWeek": 2.3,
+      "loyalty": 0.49,
+      "usualOrder": [
+        "latte",
+        "croissant"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c004",
+      "name": "Eli D.",
+      "archetype": "tourist",
+      "priceSensitivity": 0.27,
+      "visitsPerWeek": 0.4,
+      "loyalty": 0.22,
+      "usualOrder": [
+        "latte",
+        "croissant"
+      ],
+      "cares": "atmosphere, photos",
+      "seedMemories": [
+        "Cute spot we found while walking around."
+      ]
+    },
+    {
+      "key": "c005",
+      "name": "Aria E.",
+      "archetype": "tourist",
+      "priceSensitivity": 0.15,
+      "visitsPerWeek": 0.6,
+      "loyalty": 0.19,
+      "usualOrder": [
+        "latte",
+        "croissant"
+      ],
+      "cares": "atmosphere, photos",
+      "seedMemories": [
+        "Cute spot we found while walking around."
+      ]
+    },
+    {
+      "key": "c006",
+      "name": "Zoe F.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.45,
+      "visitsPerWeek": 6,
+      "loyalty": 0.9,
+      "usualOrder": [
+        "latte"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c007",
+      "name": "Theo G.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.56,
+      "visitsPerWeek": 3.4,
+      "loyalty": 0.75,
+      "usualOrder": [
+        "matcha"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c008",
+      "name": "Sam H.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.33,
+      "visitsPerWeek": 3.9,
+      "loyalty": 0.93,
+      "usualOrder": [
+        "latte"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c009",
+      "name": "Omar I.",
+      "archetype": "weekend brunch",
+      "priceSensitivity": 0.21,
+      "visitsPerWeek": 0.9,
+      "loyalty": 0.41,
+      "usualOrder": [
+        "latte",
+        "avo_toast"
+      ],
+      "cares": "food quality, vibe",
+      "seedMemories": [
+        "Great avocado toast on Saturdays.",
+        "Worth the wait for brunch."
+      ]
+    },
+    {
+      "key": "c010",
+      "name": "Eli J.",
+      "archetype": "student",
+      "priceSensitivity": 0.99,
+      "visitsPerWeek": 2.4,
+      "loyalty": 0.56,
+      "usualOrder": [
+        "cold_brew"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c011",
+      "name": "Iris K.",
+      "archetype": "student",
+      "priceSensitivity": 0.74,
+      "visitsPerWeek": 3.9,
+      "loyalty": 0.33,
+      "usualOrder": [
+        "drip",
+        "muffin"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c012",
+      "name": "Lena L.",
+      "archetype": "weekend brunch",
+      "priceSensitivity": 0.36,
+      "visitsPerWeek": 0.9,
+      "loyalty": 0.44,
+      "usualOrder": [
+        "oat_latte",
+        "bagel"
+      ],
+      "cares": "food quality, vibe",
+      "seedMemories": [
+        "Great avocado toast on Saturdays.",
+        "Worth the wait for brunch."
+      ]
+    },
+    {
+      "key": "c013",
+      "name": "Ava M.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.38,
+      "visitsPerWeek": 5.6,
+      "loyalty": 0.85,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c014",
+      "name": "Theo N.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.46,
+      "visitsPerWeek": 6,
+      "loyalty": 0.91,
+      "usualOrder": [
+        "oat_latte"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c015",
+      "name": "Sam O.",
+      "archetype": "student",
+      "priceSensitivity": 0.74,
+      "visitsPerWeek": 3.1,
+      "loyalty": 0.5,
+      "usualOrder": [
+        "drip",
+        "muffin"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c016",
+      "name": "Mila P.",
+      "archetype": "student",
+      "priceSensitivity": 0.83,
+      "visitsPerWeek": 2.2,
+      "loyalty": 0.32,
+      "usualOrder": [
+        "drip",
+        "muffin"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c017",
+      "name": "Jon Q.",
+      "archetype": "tourist",
+      "priceSensitivity": 0.15,
+      "visitsPerWeek": 0.5,
+      "loyalty": 0.13,
+      "usualOrder": [
+        "latte",
+        "croissant"
+      ],
+      "cares": "atmosphere, photos",
+      "seedMemories": [
+        "Cute spot we found while walking around."
+      ]
+    },
+    {
+      "key": "c018",
+      "name": "Rosa R.",
+      "archetype": "weekend brunch",
+      "priceSensitivity": 0.21,
+      "visitsPerWeek": 0.9,
+      "loyalty": 0.56,
+      "usualOrder": [
+        "latte",
+        "avo_toast"
+      ],
+      "cares": "food quality, vibe",
+      "seedMemories": [
+        "Great avocado toast on Saturdays.",
+        "Worth the wait for brunch."
+      ]
+    },
+    {
+      "key": "c019",
+      "name": "Maya S.",
+      "archetype": "student",
+      "priceSensitivity": 0.89,
+      "visitsPerWeek": 2.8,
+      "loyalty": 0.44,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c020",
+      "name": "Mila T.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.52,
+      "visitsPerWeek": 3.2,
+      "loyalty": 0.52,
+      "usualOrder": [
+        "matcha"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c021",
+      "name": "Rosa U.",
+      "archetype": "student",
+      "priceSensitivity": 0.77,
+      "visitsPerWeek": 3.8,
+      "loyalty": 0.58,
+      "usualOrder": [
+        "cold_brew"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c022",
+      "name": "Maya V.",
+      "archetype": "tourist",
+      "priceSensitivity": 0.18,
+      "visitsPerWeek": 0.5,
+      "loyalty": 0.2,
+      "usualOrder": [
+        "matcha"
+      ],
+      "cares": "atmosphere, photos",
+      "seedMemories": [
+        "Cute spot we found while walking around."
+      ]
+    },
+    {
+      "key": "c023",
+      "name": "Mila W.",
+      "archetype": "tourist",
+      "priceSensitivity": 0.34,
+      "visitsPerWeek": 0.4,
+      "loyalty": 0.22,
+      "usualOrder": [
+        "matcha"
+      ],
+      "cares": "atmosphere, photos",
+      "seedMemories": [
+        "Cute spot we found while walking around."
+      ]
+    },
+    {
+      "key": "c024",
+      "name": "Iris X.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.34,
+      "visitsPerWeek": 5.8,
+      "loyalty": 0.99,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c025",
+      "name": "Iris Y.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.54,
+      "visitsPerWeek": 3.3,
+      "loyalty": 0.59,
+      "usualOrder": [
+        "oat_latte"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c026",
+      "name": "Zoe Z.",
+      "archetype": "commuter",
+      "priceSensitivity": 0.41,
+      "visitsPerWeek": 4.8,
+      "loyalty": 0.57,
+      "usualOrder": [
+        "latte"
+      ],
+      "cares": "speed, short lines",
+      "seedMemories": [
+        "Quick in and out on my way to the train.",
+        "The line can get long around 8."
+      ]
+    },
+    {
+      "key": "c027",
+      "name": "Zoe A.",
+      "archetype": "commuter",
+      "priceSensitivity": 0.7,
+      "visitsPerWeek": 5.2,
+      "loyalty": 0.54,
+      "usualOrder": [
+        "latte"
+      ],
+      "cares": "speed, short lines",
+      "seedMemories": [
+        "Quick in and out on my way to the train.",
+        "The line can get long around 8."
+      ]
+    },
+    {
+      "key": "c028",
+      "name": "Zoe B.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.38,
+      "visitsPerWeek": 4.2,
+      "loyalty": 0.92,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c029",
+      "name": "Lena C.",
+      "archetype": "tourist",
+      "priceSensitivity": 0.21,
+      "visitsPerWeek": 0.5,
+      "loyalty": 0.22,
+      "usualOrder": [
+        "latte",
+        "croissant"
+      ],
+      "cares": "atmosphere, photos",
+      "seedMemories": [
+        "Cute spot we found while walking around."
+      ]
+    },
+    {
+      "key": "c030",
+      "name": "Ravi D.",
+      "archetype": "student",
+      "priceSensitivity": 0.72,
+      "visitsPerWeek": 2.4,
+      "loyalty": 0.33,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c031",
+      "name": "Ravi E.",
+      "archetype": "student",
+      "priceSensitivity": 0.83,
+      "visitsPerWeek": 3.9,
+      "loyalty": 0.5,
+      "usualOrder": [
+        "cold_brew"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c032",
+      "name": "Mila F.",
+      "archetype": "student",
+      "priceSensitivity": 0.78,
+      "visitsPerWeek": 3.7,
+      "loyalty": 0.56,
+      "usualOrder": [
+        "cold_brew"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c033",
+      "name": "Mila G.",
+      "archetype": "commuter",
+      "priceSensitivity": 0.58,
+      "visitsPerWeek": 3.5,
+      "loyalty": 0.39,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "speed, short lines",
+      "seedMemories": [
+        "Quick in and out on my way to the train.",
+        "The line can get long around 8."
+      ]
+    },
+    {
+      "key": "c034",
+      "name": "Iris H.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.33,
+      "visitsPerWeek": 5.8,
+      "loyalty": 0.89,
+      "usualOrder": [
+        "oat_latte"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c035",
+      "name": "Theo I.",
+      "archetype": "student",
+      "priceSensitivity": 0.83,
+      "visitsPerWeek": 2.7,
+      "loyalty": 0.52,
+      "usualOrder": [
+        "cold_brew"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c036",
+      "name": "Theo J.",
+      "archetype": "commuter",
+      "priceSensitivity": 0.48,
+      "visitsPerWeek": 4.7,
+      "loyalty": 0.64,
+      "usualOrder": [
+        "latte"
+      ],
+      "cares": "speed, short lines",
+      "seedMemories": [
+        "Quick in and out on my way to the train.",
+        "The line can get long around 8."
+      ]
+    },
+    {
+      "key": "c037",
+      "name": "Sam K.",
+      "archetype": "weekend brunch",
+      "priceSensitivity": 0.33,
+      "visitsPerWeek": 1,
+      "loyalty": 0.61,
+      "usualOrder": [
+        "latte",
+        "avo_toast"
+      ],
+      "cares": "food quality, vibe",
+      "seedMemories": [
+        "Great avocado toast on Saturdays.",
+        "Worth the wait for brunch."
+      ]
+    },
+    {
+      "key": "c038",
+      "name": "Leo L.",
+      "archetype": "student",
+      "priceSensitivity": 0.95,
+      "visitsPerWeek": 2.5,
+      "loyalty": 0.42,
+      "usualOrder": [
+        "drip",
+        "muffin"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c039",
+      "name": "Nina M.",
+      "archetype": "commuter",
+      "priceSensitivity": 0.44,
+      "visitsPerWeek": 4,
+      "loyalty": 0.52,
+      "usualOrder": [
+        "latte"
+      ],
+      "cares": "speed, short lines",
+      "seedMemories": [
+        "Quick in and out on my way to the train.",
+        "The line can get long around 8."
+      ]
+    },
+    {
+      "key": "c040",
+      "name": "Sam N.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.44,
+      "visitsPerWeek": 6.4,
+      "loyalty": 0.93,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c041",
+      "name": "Jon O.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.46,
+      "visitsPerWeek": 6.1,
+      "loyalty": 0.96,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c042",
+      "name": "Rosa P.",
+      "archetype": "commuter",
+      "priceSensitivity": 0.59,
+      "visitsPerWeek": 4.2,
+      "loyalty": 0.62,
+      "usualOrder": [
+        "latte"
+      ],
+      "cares": "speed, short lines",
+      "seedMemories": [
+        "Quick in and out on my way to the train.",
+        "The line can get long around 8."
+      ]
+    },
+    {
+      "key": "c043",
+      "name": "Lena Q.",
+      "archetype": "commuter",
+      "priceSensitivity": 0.64,
+      "visitsPerWeek": 3.4,
+      "loyalty": 0.5,
+      "usualOrder": [
+        "cold_brew"
+      ],
+      "cares": "speed, short lines",
+      "seedMemories": [
+        "Quick in and out on my way to the train.",
+        "The line can get long around 8."
+      ]
+    },
+    {
+      "key": "c044",
+      "name": "Sam R.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.33,
+      "visitsPerWeek": 3.9,
+      "loyalty": 0.94,
+      "usualOrder": [
+        "oat_latte"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c045",
+      "name": "Ava S.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.23,
+      "visitsPerWeek": 5.9,
+      "loyalty": 0.99,
+      "usualOrder": [
+        "latte"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c046",
+      "name": "Priya T.",
+      "archetype": "student",
+      "priceSensitivity": 0.73,
+      "visitsPerWeek": 3.6,
+      "loyalty": 0.38,
+      "usualOrder": [
+        "cold_brew"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c047",
+      "name": "Omar U.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.57,
+      "visitsPerWeek": 2.6,
+      "loyalty": 0.52,
+      "usualOrder": [
+        "latte",
+        "croissant"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c048",
+      "name": "Maya V.",
+      "archetype": "commuter",
+      "priceSensitivity": 0.66,
+      "visitsPerWeek": 3.2,
+      "loyalty": 0.44,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "speed, short lines",
+      "seedMemories": [
+        "Quick in and out on my way to the train.",
+        "The line can get long around 8."
+      ]
+    },
+    {
+      "key": "c049",
+      "name": "Aria W.",
+      "archetype": "tourist",
+      "priceSensitivity": 0.24,
+      "visitsPerWeek": 0.4,
+      "loyalty": 0.29,
+      "usualOrder": [
+        "latte",
+        "croissant"
+      ],
+      "cares": "atmosphere, photos",
+      "seedMemories": [
+        "Cute spot we found while walking around."
+      ]
+    },
+    {
+      "key": "c050",
+      "name": "Maya X.",
+      "archetype": "weekend brunch",
+      "priceSensitivity": 0.36,
+      "visitsPerWeek": 0.8,
+      "loyalty": 0.62,
+      "usualOrder": [
+        "latte",
+        "avo_toast"
+      ],
+      "cares": "food quality, vibe",
+      "seedMemories": [
+        "Great avocado toast on Saturdays.",
+        "Worth the wait for brunch."
+      ]
+    },
+    {
+      "key": "c051",
+      "name": "Eli Y.",
+      "archetype": "student",
+      "priceSensitivity": 0.91,
+      "visitsPerWeek": 2.2,
+      "loyalty": 0.55,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c052",
+      "name": "Mila Z.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.25,
+      "visitsPerWeek": 4.7,
+      "loyalty": 0.99,
+      "usualOrder": [
+        "oat_latte"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c053",
+      "name": "Zoe A.",
+      "archetype": "student",
+      "priceSensitivity": 0.91,
+      "visitsPerWeek": 2.5,
+      "loyalty": 0.32,
+      "usualOrder": [
+        "cold_brew"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c054",
+      "name": "Ben B.",
+      "archetype": "commuter",
+      "priceSensitivity": 0.47,
+      "visitsPerWeek": 3.7,
+      "loyalty": 0.61,
+      "usualOrder": [
+        "cold_brew"
+      ],
+      "cares": "speed, short lines",
+      "seedMemories": [
+        "Quick in and out on my way to the train.",
+        "The line can get long around 8."
+      ]
+    },
+    {
+      "key": "c055",
+      "name": "Rosa C.",
+      "archetype": "student",
+      "priceSensitivity": 0.99,
+      "visitsPerWeek": 3.3,
+      "loyalty": 0.49,
+      "usualOrder": [
+        "drip",
+        "muffin"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c056",
+      "name": "Ava D.",
+      "archetype": "student",
+      "priceSensitivity": 0.93,
+      "visitsPerWeek": 3.1,
+      "loyalty": 0.33,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c057",
+      "name": "Eli E.",
+      "archetype": "commuter",
+      "priceSensitivity": 0.59,
+      "visitsPerWeek": 4.6,
+      "loyalty": 0.49,
+      "usualOrder": [
+        "latte"
+      ],
+      "cares": "speed, short lines",
+      "seedMemories": [
+        "Quick in and out on my way to the train.",
+        "The line can get long around 8."
+      ]
+    },
+    {
+      "key": "c058",
+      "name": "Priya F.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.31,
+      "visitsPerWeek": 5,
+      "loyalty": 0.78,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c059",
+      "name": "Maya G.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.43,
+      "visitsPerWeek": 4.6,
+      "loyalty": 0.84,
+      "usualOrder": [
+        "latte"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c060",
+      "name": "Omar H.",
+      "archetype": "weekend brunch",
+      "priceSensitivity": 0.31,
+      "visitsPerWeek": 1.2,
+      "loyalty": 0.48,
+      "usualOrder": [
+        "oat_latte",
+        "bagel"
+      ],
+      "cares": "food quality, vibe",
+      "seedMemories": [
+        "Great avocado toast on Saturdays.",
+        "Worth the wait for brunch."
+      ]
+    },
+    {
+      "key": "c061",
+      "name": "Zoe I.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.26,
+      "visitsPerWeek": 4.9,
+      "loyalty": 0.78,
+      "usualOrder": [
+        "oat_latte"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c062",
+      "name": "Jon J.",
+      "archetype": "student",
+      "priceSensitivity": 1,
+      "visitsPerWeek": 3.1,
+      "loyalty": 0.55,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c063",
+      "name": "Eli K.",
+      "archetype": "student",
+      "priceSensitivity": 0.88,
+      "visitsPerWeek": 2.5,
+      "loyalty": 0.46,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c064",
+      "name": "Iris L.",
+      "archetype": "tourist",
+      "priceSensitivity": 0.14,
+      "visitsPerWeek": 0.6,
+      "loyalty": 0.29,
+      "usualOrder": [
+        "matcha"
+      ],
+      "cares": "atmosphere, photos",
+      "seedMemories": [
+        "Cute spot we found while walking around."
+      ]
+    },
+    {
+      "key": "c065",
+      "name": "Theo M.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.4,
+      "visitsPerWeek": 3.6,
+      "loyalty": 0.57,
+      "usualOrder": [
+        "matcha"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c066",
+      "name": "Aria N.",
+      "archetype": "weekend brunch",
+      "priceSensitivity": 0.35,
+      "visitsPerWeek": 0.9,
+      "loyalty": 0.58,
+      "usualOrder": [
+        "latte",
+        "avo_toast"
+      ],
+      "cares": "food quality, vibe",
+      "seedMemories": [
+        "Great avocado toast on Saturdays.",
+        "Worth the wait for brunch."
+      ]
+    },
+    {
+      "key": "c067",
+      "name": "Leo O.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.42,
+      "visitsPerWeek": 4.1,
+      "loyalty": 0.94,
+      "usualOrder": [
+        "latte"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c068",
+      "name": "Mila P.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.39,
+      "visitsPerWeek": 2.2,
+      "loyalty": 0.62,
+      "usualOrder": [
+        "latte",
+        "croissant"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c069",
+      "name": "Iris Q.",
+      "archetype": "weekend brunch",
+      "priceSensitivity": 0.26,
+      "visitsPerWeek": 1.3,
+      "loyalty": 0.49,
+      "usualOrder": [
+        "oat_latte",
+        "bagel"
+      ],
+      "cares": "food quality, vibe",
+      "seedMemories": [
+        "Great avocado toast on Saturdays.",
+        "Worth the wait for brunch."
+      ]
+    },
+    {
+      "key": "c070",
+      "name": "Rosa R.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.29,
+      "visitsPerWeek": 4.5,
+      "loyalty": 0.79,
+      "usualOrder": [
+        "oat_latte"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c071",
+      "name": "Noah S.",
+      "archetype": "commuter",
+      "priceSensitivity": 0.6,
+      "visitsPerWeek": 3.7,
+      "loyalty": 0.37,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "speed, short lines",
+      "seedMemories": [
+        "Quick in and out on my way to the train.",
+        "The line can get long around 8."
+      ]
+    },
+    {
+      "key": "c072",
+      "name": "Zoe T.",
+      "archetype": "weekend brunch",
+      "priceSensitivity": 0.29,
+      "visitsPerWeek": 1.2,
+      "loyalty": 0.52,
+      "usualOrder": [
+        "oat_latte",
+        "bagel"
+      ],
+      "cares": "food quality, vibe",
+      "seedMemories": [
+        "Great avocado toast on Saturdays.",
+        "Worth the wait for brunch."
+      ]
+    },
+    {
+      "key": "c073",
+      "name": "Lena U.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.35,
+      "visitsPerWeek": 4.1,
+      "loyalty": 0.97,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c074",
+      "name": "Iris V.",
+      "archetype": "tourist",
+      "priceSensitivity": 0.28,
+      "visitsPerWeek": 0.4,
+      "loyalty": 0.07,
+      "usualOrder": [
+        "matcha"
+      ],
+      "cares": "atmosphere, photos",
+      "seedMemories": [
+        "Cute spot we found while walking around."
+      ]
+    },
+    {
+      "key": "c075",
+      "name": "Eli W.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.42,
+      "visitsPerWeek": 5.4,
+      "loyalty": 0.82,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c076",
+      "name": "Iris X.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.43,
+      "visitsPerWeek": 4.8,
+      "loyalty": 0.75,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c077",
+      "name": "Ravi Y.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.45,
+      "visitsPerWeek": 2.2,
+      "loyalty": 0.71,
+      "usualOrder": [
+        "oat_latte"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c078",
+      "name": "Mila Z.",
+      "archetype": "tourist",
+      "priceSensitivity": 0.37,
+      "visitsPerWeek": 0.6,
+      "loyalty": 0.13,
+      "usualOrder": [
+        "matcha"
+      ],
+      "cares": "atmosphere, photos",
+      "seedMemories": [
+        "Cute spot we found while walking around."
+      ]
+    },
+    {
+      "key": "c079",
+      "name": "Ravi A.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.39,
+      "visitsPerWeek": 5.6,
+      "loyalty": 0.84,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c080",
+      "name": "Ravi B.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.62,
+      "visitsPerWeek": 3.8,
+      "loyalty": 0.54,
+      "usualOrder": [
+        "oat_latte"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c081",
+      "name": "Eli C.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.61,
+      "visitsPerWeek": 3.2,
+      "loyalty": 0.63,
+      "usualOrder": [
+        "matcha"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c082",
+      "name": "Aria D.",
+      "archetype": "commuter",
+      "priceSensitivity": 0.63,
+      "visitsPerWeek": 4.6,
+      "loyalty": 0.45,
+      "usualOrder": [
+        "cold_brew"
+      ],
+      "cares": "speed, short lines",
+      "seedMemories": [
+        "Quick in and out on my way to the train.",
+        "The line can get long around 8."
+      ]
+    },
+    {
+      "key": "c083",
+      "name": "Omar E.",
+      "archetype": "commuter",
+      "priceSensitivity": 0.51,
+      "visitsPerWeek": 3.2,
+      "loyalty": 0.61,
+      "usualOrder": [
+        "cold_brew"
+      ],
+      "cares": "speed, short lines",
+      "seedMemories": [
+        "Quick in and out on my way to the train.",
+        "The line can get long around 8."
+      ]
+    },
+    {
+      "key": "c084",
+      "name": "Omar F.",
+      "archetype": "student",
+      "priceSensitivity": 0.8,
+      "visitsPerWeek": 3.1,
+      "loyalty": 0.59,
+      "usualOrder": [
+        "cold_brew"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c085",
+      "name": "Noah G.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.54,
+      "visitsPerWeek": 2.8,
+      "loyalty": 0.6,
+      "usualOrder": [
+        "oat_latte"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c086",
+      "name": "Nina H.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.5,
+      "visitsPerWeek": 4,
+      "loyalty": 0.91,
+      "usualOrder": [
+        "oat_latte"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c087",
+      "name": "Lena I.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.53,
+      "visitsPerWeek": 2.8,
+      "loyalty": 0.68,
+      "usualOrder": [
+        "matcha"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c088",
+      "name": "Ravi J.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.47,
+      "visitsPerWeek": 3.5,
+      "loyalty": 0.89,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c089",
+      "name": "Priya K.",
+      "archetype": "commuter",
+      "priceSensitivity": 0.61,
+      "visitsPerWeek": 5,
+      "loyalty": 0.42,
+      "usualOrder": [
+        "latte"
+      ],
+      "cares": "speed, short lines",
+      "seedMemories": [
+        "Quick in and out on my way to the train.",
+        "The line can get long around 8."
+      ]
+    },
+    {
+      "key": "c090",
+      "name": "Rosa L.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.27,
+      "visitsPerWeek": 3.9,
+      "loyalty": 0.92,
+      "usualOrder": [
+        "latte"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c091",
+      "name": "Priya M.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.64,
+      "visitsPerWeek": 2.3,
+      "loyalty": 0.55,
+      "usualOrder": [
+        "latte",
+        "croissant"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c092",
+      "name": "Ben N.",
+      "archetype": "weekend brunch",
+      "priceSensitivity": 0.25,
+      "visitsPerWeek": 1.2,
+      "loyalty": 0.56,
+      "usualOrder": [
+        "oat_latte",
+        "bagel"
+      ],
+      "cares": "food quality, vibe",
+      "seedMemories": [
+        "Great avocado toast on Saturdays.",
+        "Worth the wait for brunch."
+      ]
+    },
+    {
+      "key": "c093",
+      "name": "Ben O.",
+      "archetype": "weekend brunch",
+      "priceSensitivity": 0.28,
+      "visitsPerWeek": 1,
+      "loyalty": 0.43,
+      "usualOrder": [
+        "latte",
+        "avo_toast"
+      ],
+      "cares": "food quality, vibe",
+      "seedMemories": [
+        "Great avocado toast on Saturdays.",
+        "Worth the wait for brunch."
+      ]
+    },
+    {
+      "key": "c094",
+      "name": "Aria P.",
+      "archetype": "student",
+      "priceSensitivity": 0.72,
+      "visitsPerWeek": 3.5,
+      "loyalty": 0.52,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c095",
+      "name": "Aria Q.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.49,
+      "visitsPerWeek": 3.6,
+      "loyalty": 0.59,
+      "usualOrder": [
+        "matcha"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c096",
+      "name": "Ava R.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.63,
+      "visitsPerWeek": 3.6,
+      "loyalty": 0.55,
+      "usualOrder": [
+        "latte",
+        "croissant"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c097",
+      "name": "Mila S.",
+      "archetype": "commuter",
+      "priceSensitivity": 0.55,
+      "visitsPerWeek": 4,
+      "loyalty": 0.46,
+      "usualOrder": [
+        "latte"
+      ],
+      "cares": "speed, short lines",
+      "seedMemories": [
+        "Quick in and out on my way to the train.",
+        "The line can get long around 8."
+      ]
+    },
+    {
+      "key": "c098",
+      "name": "Sam T.",
+      "archetype": "student",
+      "priceSensitivity": 1,
+      "visitsPerWeek": 2.4,
+      "loyalty": 0.38,
+      "usualOrder": [
+        "cold_brew"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c099",
+      "name": "Zoe U.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.6,
+      "visitsPerWeek": 2.3,
+      "loyalty": 0.55,
+      "usualOrder": [
+        "oat_latte"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c100",
+      "name": "Ravi V.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.5,
+      "visitsPerWeek": 3.4,
+      "loyalty": 0.6,
+      "usualOrder": [
+        "matcha"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c101",
+      "name": "Omar W.",
+      "archetype": "student",
+      "priceSensitivity": 0.92,
+      "visitsPerWeek": 2.7,
+      "loyalty": 0.52,
+      "usualOrder": [
+        "cold_brew"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c102",
+      "name": "Ravi X.",
+      "archetype": "student",
+      "priceSensitivity": 0.83,
+      "visitsPerWeek": 3.7,
+      "loyalty": 0.58,
+      "usualOrder": [
+        "cold_brew"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c103",
+      "name": "Maya Y.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.4,
+      "visitsPerWeek": 3.4,
+      "loyalty": 0.53,
+      "usualOrder": [
+        "oat_latte"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c104",
+      "name": "Iris Z.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.22,
+      "visitsPerWeek": 4.7,
+      "loyalty": 0.8,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c105",
+      "name": "Zoe A.",
+      "archetype": "weekend brunch",
+      "priceSensitivity": 0.24,
+      "visitsPerWeek": 1.1,
+      "loyalty": 0.68,
+      "usualOrder": [
+        "oat_latte",
+        "bagel"
+      ],
+      "cares": "food quality, vibe",
+      "seedMemories": [
+        "Great avocado toast on Saturdays.",
+        "Worth the wait for brunch."
+      ]
+    },
+    {
+      "key": "c106",
+      "name": "Kai B.",
+      "archetype": "weekend brunch",
+      "priceSensitivity": 0.4,
+      "visitsPerWeek": 1.1,
+      "loyalty": 0.69,
+      "usualOrder": [
+        "oat_latte",
+        "bagel"
+      ],
+      "cares": "food quality, vibe",
+      "seedMemories": [
+        "Great avocado toast on Saturdays.",
+        "Worth the wait for brunch."
+      ]
+    },
+    {
+      "key": "c107",
+      "name": "Zoe C.",
+      "archetype": "student",
+      "priceSensitivity": 0.8,
+      "visitsPerWeek": 3,
+      "loyalty": 0.42,
+      "usualOrder": [
+        "cold_brew"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c108",
+      "name": "Omar D.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.42,
+      "visitsPerWeek": 4.5,
+      "loyalty": 0.84,
+      "usualOrder": [
+        "oat_latte"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c109",
+      "name": "Nina E.",
+      "archetype": "student",
+      "priceSensitivity": 0.88,
+      "visitsPerWeek": 2.7,
+      "loyalty": 0.36,
+      "usualOrder": [
+        "cold_brew"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c110",
+      "name": "Mila F.",
+      "archetype": "weekend brunch",
+      "priceSensitivity": 0.44,
+      "visitsPerWeek": 1.1,
+      "loyalty": 0.48,
+      "usualOrder": [
+        "oat_latte",
+        "bagel"
+      ],
+      "cares": "food quality, vibe",
+      "seedMemories": [
+        "Great avocado toast on Saturdays.",
+        "Worth the wait for brunch."
+      ]
+    },
+    {
+      "key": "c111",
+      "name": "Noah G.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.43,
+      "visitsPerWeek": 6.3,
+      "loyalty": 0.9,
+      "usualOrder": [
+        "latte"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c112",
+      "name": "Sam H.",
+      "archetype": "weekend brunch",
+      "priceSensitivity": 0.39,
+      "visitsPerWeek": 0.7,
+      "loyalty": 0.65,
+      "usualOrder": [
+        "latte",
+        "avo_toast"
+      ],
+      "cares": "food quality, vibe",
+      "seedMemories": [
+        "Great avocado toast on Saturdays.",
+        "Worth the wait for brunch."
+      ]
+    },
+    {
+      "key": "c113",
+      "name": "Kai I.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.57,
+      "visitsPerWeek": 2.8,
+      "loyalty": 0.47,
+      "usualOrder": [
+        "oat_latte"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c114",
+      "name": "Omar J.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.49,
+      "visitsPerWeek": 5.1,
+      "loyalty": 1,
+      "usualOrder": [
+        "latte"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c115",
+      "name": "Jon K.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.21,
+      "visitsPerWeek": 6,
+      "loyalty": 0.91,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c116",
+      "name": "Rosa L.",
+      "archetype": "weekend brunch",
+      "priceSensitivity": 0.33,
+      "visitsPerWeek": 1,
+      "loyalty": 0.53,
+      "usualOrder": [
+        "latte",
+        "avo_toast"
+      ],
+      "cares": "food quality, vibe",
+      "seedMemories": [
+        "Great avocado toast on Saturdays.",
+        "Worth the wait for brunch."
+      ]
+    },
+    {
+      "key": "c117",
+      "name": "Ben M.",
+      "archetype": "student",
+      "priceSensitivity": 0.79,
+      "visitsPerWeek": 2.5,
+      "loyalty": 0.57,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c118",
+      "name": "Maya N.",
+      "archetype": "commuter",
+      "priceSensitivity": 0.65,
+      "visitsPerWeek": 3.5,
+      "loyalty": 0.53,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "speed, short lines",
+      "seedMemories": [
+        "Quick in and out on my way to the train.",
+        "The line can get long around 8."
+      ]
+    },
+    {
+      "key": "c119",
+      "name": "Maya O.",
+      "archetype": "commuter",
+      "priceSensitivity": 0.62,
+      "visitsPerWeek": 4.1,
+      "loyalty": 0.58,
+      "usualOrder": [
+        "cold_brew"
+      ],
+      "cares": "speed, short lines",
+      "seedMemories": [
+        "Quick in and out on my way to the train.",
+        "The line can get long around 8."
+      ]
+    },
+    {
+      "key": "c120",
+      "name": "Priya P.",
+      "archetype": "commuter",
+      "priceSensitivity": 0.61,
+      "visitsPerWeek": 3.4,
+      "loyalty": 0.48,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "speed, short lines",
+      "seedMemories": [
+        "Quick in and out on my way to the train.",
+        "The line can get long around 8."
+      ]
+    },
+    {
+      "key": "c121",
+      "name": "Rosa Q.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.24,
+      "visitsPerWeek": 4.2,
+      "loyalty": 0.93,
+      "usualOrder": [
+        "oat_latte"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c122",
+      "name": "Jon R.",
+      "archetype": "commuter",
+      "priceSensitivity": 0.6,
+      "visitsPerWeek": 3.4,
+      "loyalty": 0.59,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "speed, short lines",
+      "seedMemories": [
+        "Quick in and out on my way to the train.",
+        "The line can get long around 8."
+      ]
+    },
+    {
+      "key": "c123",
+      "name": "Lena S.",
+      "archetype": "tourist",
+      "priceSensitivity": 0.13,
+      "visitsPerWeek": 0.4,
+      "loyalty": 0.31,
+      "usualOrder": [
+        "matcha"
+      ],
+      "cares": "atmosphere, photos",
+      "seedMemories": [
+        "Cute spot we found while walking around."
+      ]
+    },
+    {
+      "key": "c124",
+      "name": "Lena T.",
+      "archetype": "student",
+      "priceSensitivity": 0.71,
+      "visitsPerWeek": 3.9,
+      "loyalty": 0.59,
+      "usualOrder": [
+        "drip",
+        "muffin"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c125",
+      "name": "Jon U.",
+      "archetype": "student",
+      "priceSensitivity": 0.81,
+      "visitsPerWeek": 2.6,
+      "loyalty": 0.39,
+      "usualOrder": [
+        "cold_brew"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c126",
+      "name": "Theo V.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.24,
+      "visitsPerWeek": 5,
+      "loyalty": 0.88,
+      "usualOrder": [
+        "oat_latte"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c127",
+      "name": "Ravi W.",
+      "archetype": "student",
+      "priceSensitivity": 0.74,
+      "visitsPerWeek": 3.2,
+      "loyalty": 0.56,
+      "usualOrder": [
+        "drip",
+        "muffin"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c128",
+      "name": "Aria X.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.22,
+      "visitsPerWeek": 5.6,
+      "loyalty": 0.8,
+      "usualOrder": [
+        "oat_latte"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c129",
+      "name": "Priya Y.",
+      "archetype": "student",
+      "priceSensitivity": 1,
+      "visitsPerWeek": 2.5,
+      "loyalty": 0.45,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c130",
+      "name": "Leo Z.",
+      "archetype": "tourist",
+      "priceSensitivity": 0.1,
+      "visitsPerWeek": 0.4,
+      "loyalty": 0.16,
+      "usualOrder": [
+        "matcha"
+      ],
+      "cares": "atmosphere, photos",
+      "seedMemories": [
+        "Cute spot we found while walking around."
+      ]
+    },
+    {
+      "key": "c131",
+      "name": "Ben A.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.29,
+      "visitsPerWeek": 6.1,
+      "loyalty": 0.87,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c132",
+      "name": "Priya B.",
+      "archetype": "student",
+      "priceSensitivity": 0.72,
+      "visitsPerWeek": 3.8,
+      "loyalty": 0.35,
+      "usualOrder": [
+        "drip",
+        "muffin"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c133",
+      "name": "Nina C.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.38,
+      "visitsPerWeek": 3.7,
+      "loyalty": 0.69,
+      "usualOrder": [
+        "oat_latte"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c134",
+      "name": "Mila D.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.39,
+      "visitsPerWeek": 6.4,
+      "loyalty": 0.73,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c135",
+      "name": "Iris E.",
+      "archetype": "commuter",
+      "priceSensitivity": 0.62,
+      "visitsPerWeek": 3.4,
+      "loyalty": 0.39,
+      "usualOrder": [
+        "cold_brew"
+      ],
+      "cares": "speed, short lines",
+      "seedMemories": [
+        "Quick in and out on my way to the train.",
+        "The line can get long around 8."
+      ]
+    },
+    {
+      "key": "c136",
+      "name": "Jon F.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.37,
+      "visitsPerWeek": 4.1,
+      "loyalty": 0.85,
+      "usualOrder": [
+        "oat_latte"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c137",
+      "name": "Kai G.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.44,
+      "visitsPerWeek": 4,
+      "loyalty": 0.99,
+      "usualOrder": [
+        "oat_latte"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c138",
+      "name": "Eli H.",
+      "archetype": "weekend brunch",
+      "priceSensitivity": 0.32,
+      "visitsPerWeek": 1,
+      "loyalty": 0.53,
+      "usualOrder": [
+        "latte",
+        "avo_toast"
+      ],
+      "cares": "food quality, vibe",
+      "seedMemories": [
+        "Great avocado toast on Saturdays.",
+        "Worth the wait for brunch."
+      ]
+    },
+    {
+      "key": "c139",
+      "name": "Ravi I.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.41,
+      "visitsPerWeek": 2.8,
+      "loyalty": 0.52,
+      "usualOrder": [
+        "oat_latte"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c140",
+      "name": "Ben J.",
+      "archetype": "commuter",
+      "priceSensitivity": 0.56,
+      "visitsPerWeek": 3.2,
+      "loyalty": 0.39,
+      "usualOrder": [
+        "latte"
+      ],
+      "cares": "speed, short lines",
+      "seedMemories": [
+        "Quick in and out on my way to the train.",
+        "The line can get long around 8."
+      ]
+    },
+    {
+      "key": "c141",
+      "name": "Maya K.",
+      "archetype": "commuter",
+      "priceSensitivity": 0.53,
+      "visitsPerWeek": 4.6,
+      "loyalty": 0.45,
+      "usualOrder": [
+        "cold_brew"
+      ],
+      "cares": "speed, short lines",
+      "seedMemories": [
+        "Quick in and out on my way to the train.",
+        "The line can get long around 8."
+      ]
+    },
+    {
+      "key": "c142",
+      "name": "Nina L.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.45,
+      "visitsPerWeek": 3.8,
+      "loyalty": 0.51,
+      "usualOrder": [
+        "oat_latte"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c143",
+      "name": "Lena M.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.28,
+      "visitsPerWeek": 5,
+      "loyalty": 0.83,
+      "usualOrder": [
+        "oat_latte"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c144",
+      "name": "Rosa N.",
+      "archetype": "weekend brunch",
+      "priceSensitivity": 0.17,
+      "visitsPerWeek": 1.1,
+      "loyalty": 0.66,
+      "usualOrder": [
+        "latte",
+        "avo_toast"
+      ],
+      "cares": "food quality, vibe",
+      "seedMemories": [
+        "Great avocado toast on Saturdays.",
+        "Worth the wait for brunch."
+      ]
+    },
+    {
+      "key": "c145",
+      "name": "Kai O.",
+      "archetype": "student",
+      "priceSensitivity": 0.85,
+      "visitsPerWeek": 3.7,
+      "loyalty": 0.54,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c146",
+      "name": "Priya P.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.36,
+      "visitsPerWeek": 3.8,
+      "loyalty": 0.61,
+      "usualOrder": [
+        "matcha"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c147",
+      "name": "Ravi Q.",
+      "archetype": "student",
+      "priceSensitivity": 0.84,
+      "visitsPerWeek": 2.9,
+      "loyalty": 0.51,
+      "usualOrder": [
+        "cold_brew"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c148",
+      "name": "Jon R.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.42,
+      "visitsPerWeek": 3.6,
+      "loyalty": 0.99,
+      "usualOrder": [
+        "oat_latte"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c149",
+      "name": "Lena S.",
+      "archetype": "weekend brunch",
+      "priceSensitivity": 0.23,
+      "visitsPerWeek": 1.1,
+      "loyalty": 0.44,
+      "usualOrder": [
+        "latte",
+        "avo_toast"
+      ],
+      "cares": "food quality, vibe",
+      "seedMemories": [
+        "Great avocado toast on Saturdays.",
+        "Worth the wait for brunch."
+      ]
+    },
+    {
+      "key": "c150",
+      "name": "Lena T.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.44,
+      "visitsPerWeek": 2.8,
+      "loyalty": 0.61,
+      "usualOrder": [
+        "matcha"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c151",
+      "name": "Rosa U.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.53,
+      "visitsPerWeek": 2.8,
+      "loyalty": 0.7,
+      "usualOrder": [
+        "oat_latte"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c152",
+      "name": "Theo V.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.27,
+      "visitsPerWeek": 5.3,
+      "loyalty": 0.87,
+      "usualOrder": [
+        "latte"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c153",
+      "name": "Noah W.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.53,
+      "visitsPerWeek": 2.2,
+      "loyalty": 0.5,
+      "usualOrder": [
+        "oat_latte"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c154",
+      "name": "Rosa X.",
+      "archetype": "student",
+      "priceSensitivity": 0.71,
+      "visitsPerWeek": 3.3,
+      "loyalty": 0.42,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c155",
+      "name": "Ravi Y.",
+      "archetype": "weekend brunch",
+      "priceSensitivity": 0.43,
+      "visitsPerWeek": 1.2,
+      "loyalty": 0.41,
+      "usualOrder": [
+        "oat_latte",
+        "bagel"
+      ],
+      "cares": "food quality, vibe",
+      "seedMemories": [
+        "Great avocado toast on Saturdays.",
+        "Worth the wait for brunch."
+      ]
+    },
+    {
+      "key": "c156",
+      "name": "Rosa Z.",
+      "archetype": "student",
+      "priceSensitivity": 0.71,
+      "visitsPerWeek": 2.6,
+      "loyalty": 0.32,
+      "usualOrder": [
+        "drip",
+        "muffin"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c157",
+      "name": "Ava A.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.42,
+      "visitsPerWeek": 5,
+      "loyalty": 0.78,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c158",
+      "name": "Omar B.",
+      "archetype": "student",
+      "priceSensitivity": 0.8,
+      "visitsPerWeek": 3.3,
+      "loyalty": 0.41,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c159",
+      "name": "Ravi C.",
+      "archetype": "tourist",
+      "priceSensitivity": 0.35,
+      "visitsPerWeek": 0.5,
+      "loyalty": 0.18,
+      "usualOrder": [
+        "latte",
+        "croissant"
+      ],
+      "cares": "atmosphere, photos",
+      "seedMemories": [
+        "Cute spot we found while walking around."
+      ]
+    },
+    {
+      "key": "c160",
+      "name": "Jon D.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.24,
+      "visitsPerWeek": 6.5,
+      "loyalty": 0.99,
+      "usualOrder": [
+        "latte"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c161",
+      "name": "Sam E.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.44,
+      "visitsPerWeek": 2.5,
+      "loyalty": 0.61,
+      "usualOrder": [
+        "oat_latte"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c162",
+      "name": "Nina F.",
+      "archetype": "weekend brunch",
+      "priceSensitivity": 0.34,
+      "visitsPerWeek": 1.1,
+      "loyalty": 0.68,
+      "usualOrder": [
+        "oat_latte",
+        "bagel"
+      ],
+      "cares": "food quality, vibe",
+      "seedMemories": [
+        "Great avocado toast on Saturdays.",
+        "Worth the wait for brunch."
+      ]
+    },
+    {
+      "key": "c163",
+      "name": "Zoe G.",
+      "archetype": "student",
+      "priceSensitivity": 0.97,
+      "visitsPerWeek": 2.9,
+      "loyalty": 0.6,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c164",
+      "name": "Kai H.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.58,
+      "visitsPerWeek": 3.9,
+      "loyalty": 0.52,
+      "usualOrder": [
+        "latte",
+        "croissant"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c165",
+      "name": "Nina I.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.25,
+      "visitsPerWeek": 4,
+      "loyalty": 0.84,
+      "usualOrder": [
+        "oat_latte"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c166",
+      "name": "Iris J.",
+      "archetype": "weekend brunch",
+      "priceSensitivity": 0.32,
+      "visitsPerWeek": 1.2,
+      "loyalty": 0.65,
+      "usualOrder": [
+        "latte",
+        "avo_toast"
+      ],
+      "cares": "food quality, vibe",
+      "seedMemories": [
+        "Great avocado toast on Saturdays.",
+        "Worth the wait for brunch."
+      ]
+    },
+    {
+      "key": "c167",
+      "name": "Eli K.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.56,
+      "visitsPerWeek": 3.6,
+      "loyalty": 0.75,
+      "usualOrder": [
+        "matcha"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c168",
+      "name": "Kai L.",
+      "archetype": "student",
+      "priceSensitivity": 0.75,
+      "visitsPerWeek": 2.6,
+      "loyalty": 0.33,
+      "usualOrder": [
+        "cold_brew"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c169",
+      "name": "Priya M.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.56,
+      "visitsPerWeek": 3,
+      "loyalty": 0.55,
+      "usualOrder": [
+        "matcha"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c170",
+      "name": "Lena N.",
+      "archetype": "student",
+      "priceSensitivity": 0.76,
+      "visitsPerWeek": 2.2,
+      "loyalty": 0.45,
+      "usualOrder": [
+        "drip",
+        "muffin"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c171",
+      "name": "Lena O.",
+      "archetype": "tourist",
+      "priceSensitivity": 0.16,
+      "visitsPerWeek": 0.4,
+      "loyalty": 0.34,
+      "usualOrder": [
+        "matcha"
+      ],
+      "cares": "atmosphere, photos",
+      "seedMemories": [
+        "Cute spot we found while walking around."
+      ]
+    },
+    {
+      "key": "c172",
+      "name": "Maya P.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.4,
+      "visitsPerWeek": 5.5,
+      "loyalty": 0.96,
+      "usualOrder": [
+        "latte"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c173",
+      "name": "Nina Q.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.51,
+      "visitsPerWeek": 3.4,
+      "loyalty": 0.69,
+      "usualOrder": [
+        "latte",
+        "croissant"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c174",
+      "name": "Ava R.",
+      "archetype": "student",
+      "priceSensitivity": 0.76,
+      "visitsPerWeek": 2.3,
+      "loyalty": 0.34,
+      "usualOrder": [
+        "drip",
+        "muffin"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c175",
+      "name": "Ben S.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.52,
+      "visitsPerWeek": 2.3,
+      "loyalty": 0.63,
+      "usualOrder": [
+        "latte",
+        "croissant"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c176",
+      "name": "Priya T.",
+      "archetype": "tourist",
+      "priceSensitivity": 0.24,
+      "visitsPerWeek": 0.6,
+      "loyalty": 0.25,
+      "usualOrder": [
+        "matcha"
+      ],
+      "cares": "atmosphere, photos",
+      "seedMemories": [
+        "Cute spot we found while walking around."
+      ]
+    },
+    {
+      "key": "c177",
+      "name": "Jon U.",
+      "archetype": "student",
+      "priceSensitivity": 0.72,
+      "visitsPerWeek": 3.9,
+      "loyalty": 0.49,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c178",
+      "name": "Jon V.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.35,
+      "visitsPerWeek": 3.3,
+      "loyalty": 0.5,
+      "usualOrder": [
+        "latte",
+        "croissant"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c179",
+      "name": "Kai W.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.36,
+      "visitsPerWeek": 5.2,
+      "loyalty": 0.85,
+      "usualOrder": [
+        "latte"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c180",
+      "name": "Mila X.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.57,
+      "visitsPerWeek": 3.9,
+      "loyalty": 0.54,
+      "usualOrder": [
+        "latte",
+        "croissant"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c181",
+      "name": "Eli Y.",
+      "archetype": "student",
+      "priceSensitivity": 0.82,
+      "visitsPerWeek": 3.5,
+      "loyalty": 0.39,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c182",
+      "name": "Lena Z.",
+      "archetype": "student",
+      "priceSensitivity": 0.76,
+      "visitsPerWeek": 2.8,
+      "loyalty": 0.5,
+      "usualOrder": [
+        "drip",
+        "muffin"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c183",
+      "name": "Lena A.",
+      "archetype": "student",
+      "priceSensitivity": 0.88,
+      "visitsPerWeek": 3,
+      "loyalty": 0.41,
+      "usualOrder": [
+        "drip",
+        "muffin"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c184",
+      "name": "Lena B.",
+      "archetype": "weekend brunch",
+      "priceSensitivity": 0.38,
+      "visitsPerWeek": 1.1,
+      "loyalty": 0.48,
+      "usualOrder": [
+        "latte",
+        "avo_toast"
+      ],
+      "cares": "food quality, vibe",
+      "seedMemories": [
+        "Great avocado toast on Saturdays.",
+        "Worth the wait for brunch."
+      ]
+    },
+    {
+      "key": "c185",
+      "name": "Nina C.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.48,
+      "visitsPerWeek": 3.6,
+      "loyalty": 0.96,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c186",
+      "name": "Eli D.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.62,
+      "visitsPerWeek": 3,
+      "loyalty": 0.68,
+      "usualOrder": [
+        "latte",
+        "croissant"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c187",
+      "name": "Jon E.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.48,
+      "visitsPerWeek": 2.9,
+      "loyalty": 0.74,
+      "usualOrder": [
+        "matcha"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c188",
+      "name": "Maya F.",
+      "archetype": "commuter",
+      "priceSensitivity": 0.68,
+      "visitsPerWeek": 5,
+      "loyalty": 0.56,
+      "usualOrder": [
+        "cold_brew"
+      ],
+      "cares": "speed, short lines",
+      "seedMemories": [
+        "Quick in and out on my way to the train.",
+        "The line can get long around 8."
+      ]
+    },
+    {
+      "key": "c189",
+      "name": "Jon G.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.3,
+      "visitsPerWeek": 3.9,
+      "loyalty": 0.91,
+      "usualOrder": [
+        "oat_latte"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c190",
+      "name": "Iris H.",
+      "archetype": "weekend brunch",
+      "priceSensitivity": 0.16,
+      "visitsPerWeek": 1,
+      "loyalty": 0.48,
+      "usualOrder": [
+        "latte",
+        "avo_toast"
+      ],
+      "cares": "food quality, vibe",
+      "seedMemories": [
+        "Great avocado toast on Saturdays.",
+        "Worth the wait for brunch."
+      ]
+    },
+    {
+      "key": "c191",
+      "name": "Zoe I.",
+      "archetype": "student",
+      "priceSensitivity": 0.73,
+      "visitsPerWeek": 2.6,
+      "loyalty": 0.36,
+      "usualOrder": [
+        "drip",
+        "muffin"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c192",
+      "name": "Leo J.",
+      "archetype": "tourist",
+      "priceSensitivity": 0.12,
+      "visitsPerWeek": 0.5,
+      "loyalty": 0.22,
+      "usualOrder": [
+        "matcha"
+      ],
+      "cares": "atmosphere, photos",
+      "seedMemories": [
+        "Cute spot we found while walking around."
+      ]
+    },
+    {
+      "key": "c193",
+      "name": "Nina K.",
+      "archetype": "weekend brunch",
+      "priceSensitivity": 0.25,
+      "visitsPerWeek": 1.2,
+      "loyalty": 0.53,
+      "usualOrder": [
+        "latte",
+        "avo_toast"
+      ],
+      "cares": "food quality, vibe",
+      "seedMemories": [
+        "Great avocado toast on Saturdays.",
+        "Worth the wait for brunch."
+      ]
+    },
+    {
+      "key": "c194",
+      "name": "Leo L.",
+      "archetype": "student",
+      "priceSensitivity": 0.7,
+      "visitsPerWeek": 3.4,
+      "loyalty": 0.36,
+      "usualOrder": [
+        "drip",
+        "muffin"
+      ],
+      "cares": "price, wifi, outlets",
+      "seedMemories": [
+        "Good place to study but it is getting pricey.",
+        "Wifi is solid and there are outlets."
+      ]
+    },
+    {
+      "key": "c195",
+      "name": "Zoe M.",
+      "archetype": "commuter",
+      "priceSensitivity": 0.62,
+      "visitsPerWeek": 3.1,
+      "loyalty": 0.46,
+      "usualOrder": [
+        "cold_brew"
+      ],
+      "cares": "speed, short lines",
+      "seedMemories": [
+        "Quick in and out on my way to the train.",
+        "The line can get long around 8."
+      ]
+    },
+    {
+      "key": "c196",
+      "name": "Maya N.",
+      "archetype": "commuter",
+      "priceSensitivity": 0.61,
+      "visitsPerWeek": 3.8,
+      "loyalty": 0.52,
+      "usualOrder": [
+        "cold_brew"
+      ],
+      "cares": "speed, short lines",
+      "seedMemories": [
+        "Quick in and out on my way to the train.",
+        "The line can get long around 8."
+      ]
+    },
+    {
+      "key": "c197",
+      "name": "Sam O.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.62,
+      "visitsPerWeek": 2.3,
+      "loyalty": 0.45,
+      "usualOrder": [
+        "latte",
+        "croissant"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c198",
+      "name": "Kai P.",
+      "archetype": "remote worker",
+      "priceSensitivity": 0.41,
+      "visitsPerWeek": 3.8,
+      "loyalty": 0.58,
+      "usualOrder": [
+        "oat_latte"
+      ],
+      "cares": "wifi, seating, quiet",
+      "seedMemories": [
+        "I work here a few afternoons a week.",
+        "Seats fill up fast at lunch."
+      ]
+    },
+    {
+      "key": "c199",
+      "name": "Jon Q.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.4,
+      "visitsPerWeek": 5.3,
+      "loyalty": 0.8,
+      "usualOrder": [
+        "latte"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    },
+    {
+      "key": "c200",
+      "name": "Priya R.",
+      "archetype": "daily regular",
+      "priceSensitivity": 0.29,
+      "visitsPerWeek": 6.1,
+      "loyalty": 0.87,
+      "usualOrder": [
+        "drip"
+      ],
+      "cares": "consistency, friendly staff",
+      "seedMemories": [
+        "This is my daily stop, they know my order.",
+        "Coffee is consistent every single morning."
+      ]
+    }
+  ]
+}
