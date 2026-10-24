@@ -274,7 +274,8 @@ export class TileScene {
     // Wait for our overlay source too: a building found before it exists would never be drawn.
     if (!this.map.getLayer('buildings') || !this.map.getSource('painted')) return;
     let changed = false;
-    if (this.map.getZoom() >= 13) {
+    // Below ~z14.5 the tiles merge a block's buildings into one shape; only look up single buildings.
+    if (this.map.getZoom() >= 14.5) {
       const canvas = this.map.getCanvas();
       for (const t of this.targets) {
         if (this.painted.has(t.key)) continue;
@@ -455,12 +456,28 @@ export class TileScene {
 }
 
 /** The drawn building containing (lng, lat), else the nearest one within 25 m: its footprint and height. */
+/** The footprint area of a [lng, lat] ring in square meters. */
+function areaM2(ring: [number, number][], mPerLng: number): number {
+  let a = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    a += ring[j][0] * mPerLng * ring[i][1] * 110540 - ring[i][0] * mPerLng * ring[j][1] * 110540;
+  }
+  return Math.abs(a) / 2;
+}
+
+const MAX_BUILDING_M2 = 6000; // bigger than this is a merged block (or a mall), not one café's building
+
+/**
+ * The single drawn building containing (lng, lat) (the smallest, if shapes overlap), else the
+ * nearest one within 25 m: its footprint and height. Block-sized shapes are never returned.
+ */
 function buildingAt(
   hits: maplibregl.MapGeoJSONFeature[],
   lng: number,
   lat: number,
   mPerLng: number
 ): { ring: [number, number][]; h: number; base: number } | null {
+  let inside: { ring: [number, number][]; h: number; base: number; area: number } | null = null;
   let near: { ring: [number, number][]; h: number; base: number; d: number } | null = null;
   for (const f of hits) {
     const g = f.geometry;
@@ -469,13 +486,18 @@ function buildingAt(
     const base = Number(f.properties?.render_min_height ?? 0);
     for (const poly of polys) {
       const ring = poly[0] as [number, number][];
-      if (inRingLL(ring, lng, lat)) return { ring, h, base };
+      const area = areaM2(ring, mPerLng);
+      if (area > MAX_BUILDING_M2) continue;
+      if (inRingLL(ring, lng, lat)) {
+        if (!inside || area < inside.area) inside = { ring, h, base, area };
+        continue;
+      }
       const [cx, cy] = centerLL(ring);
       const d = Math.hypot((cx - lng) * mPerLng, (cy - lat) * 110540);
       if (d < 25 && (!near || d < near.d)) near = { ring, h, base, d };
     }
   }
-  return near;
+  return inside ?? near;
 }
 
 /** A building redrawn ~2% larger and 0.5 m taller, so it covers the map's own copy of it. */
