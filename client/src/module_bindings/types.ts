@@ -148,6 +148,12 @@ export const Experiment = __t.object("Experiment", {
 });
 export type Experiment = __Infer<typeof Experiment>;
 
+export const ExperimentRadius = __t.object("ExperimentRadius", {
+  experimentId: __t.u64(),
+  radiusM: __t.u32(),
+});
+export type ExperimentRadius = __Infer<typeof ExperimentRadius>;
+
 export const ExperimentResult = __t.object("ExperimentResult", {
   id: __t.u64(),
   experimentId: __t.u64(),
@@ -232,6 +238,44 @@ export const Review = __t.object("Review", {
 });
 export type Review = __Infer<typeof Review>;
 
+export const Rival = __t.object("Rival", {
+  id: __t.u64(),
+  buildId: __t.u64(),
+  key: __t.string(),
+  name: __t.string(),
+  x: __t.f64(),
+  y: __t.f64(),
+  distanceM: __t.u32(),
+  rating: __t.f64(),
+  reviewsCount: __t.u32(),
+  priceIndex: __t.f64(),
+  category: __t.string(),
+});
+export type Rival = __Infer<typeof Rival>;
+
+export const RivalJob = __t.object("RivalJob", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+  buildId: __t.u64(),
+});
+export type RivalJob = __Infer<typeof RivalJob>;
+
+export const RivalScan = __t.object("RivalScan", {
+  buildId: __t.u64(),
+  status: __t.string(),
+  runId: __t.string(),
+  detail: __t.string(),
+});
+export type RivalScan = __Infer<typeof RivalScan>;
+
+export const RivalTally = __t.object("RivalTally", {
+  id: __t.u64(),
+  universeId: __t.u64(),
+  rivalKey: __t.string(),
+  visits: __t.u32(),
+});
+export type RivalTally = __Infer<typeof RivalTally>;
+
 export const Traced = __t.object("Traced", {
   universeId: __t.u64(),
 });
@@ -280,6 +324,12 @@ export const Universe = __t.object("Universe", {
   brain: __t.string(),
 });
 export type Universe = __Infer<typeof Universe>;
+
+export const UniverseBuild = __t.object("UniverseBuild", {
+  universeId: __t.u64(),
+  buildId: __t.u64(),
+});
+export type UniverseBuild = __Infer<typeof UniverseBuild>;
 
 export const Visit = __t.object("Visit", {
   id: __t.u64(),

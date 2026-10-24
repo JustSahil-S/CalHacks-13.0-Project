@@ -37,6 +37,11 @@
       <section class="sheet" id="experiment-card">
         <p class="eyebrow">Fork the future</p>
         <div id="menu-editor" class="menu-editor"></div>
+        <label class="radius">
+          <span>Competitors within <b id="radius-label">1.5 mi</b></span>
+          <input type="range" id="radius" min="0" max="8" step="1" value="4" />
+          <small id="radius-count"></small>
+        </label>
         <div class="row">
           <label>Copies <input id="copies" type="number" min="2" max="20" value="10" /></label>
           <label>Days <input id="days" type="number" min="14" max="180" value="60" /></label>

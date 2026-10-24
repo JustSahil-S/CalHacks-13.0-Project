@@ -71,7 +71,11 @@ export class IsoScene {
   private azimuth = Math.PI / 4;
   private azimuthGoal = Math.PI / 4;
   private viewSize = 300;
+  private viewSizeGoal = 300;
+  private mapRadius = 300;
   private model = new THREE.Group();
+  private region = new THREE.Group(); // rivals beyond the model, the radius ring
+  private rivalPins: HTMLElement[] = [];
   private pawns: THREE.InstancedMesh | null = null;
   private selectedRing: THREE.Mesh;
   private dummy = new THREE.Object3D();
@@ -87,8 +91,9 @@ export class IsoScene {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     host.appendChild(this.renderer.domElement);
 
-    this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -2000, 4000);
+    this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -40000, 40000);
     this.scene.add(this.model);
+    this.scene.add(this.region);
 
     const hemi = new THREE.HemisphereLight(0xfffaf0, 0xb8a888, 1.15);
     this.scene.add(hemi);
@@ -117,6 +122,10 @@ export class IsoScene {
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
       this.azimuth += (this.azimuthGoal - this.azimuth) * Math.min(1, dt * 8);
+      if (Math.abs(this.viewSizeGoal - this.viewSize) > 0.5) {
+        this.viewSize += (this.viewSizeGoal - this.viewSize) * Math.min(1, dt * 5);
+        this.resize();
+      }
       this.placeCamera();
       this.onFrame(dt);
       this.renderer.render(this.scene, this.camera);
@@ -295,9 +304,67 @@ export class IsoScene {
     }
 
     this.target.set(0, 0, 0);
-    this.viewSize = R * 1.35;
+    this.mapRadius = R;
+    this.viewSize = this.viewSizeGoal = R * 1.35;
     this.camera.zoom = 1;
+    this.region.clear();
     this.resize();
+  }
+
+  // ---- Rivals within the chosen radius ---------------------------------------------
+
+  /**
+   * Show the competitor radius: a ring on a map-table surface around the model, a teal pin for
+   * every rival in range (inside the model or out on the table), and labels for the strongest.
+   * Zooms out so the whole radius is in view.
+   */
+  setRivals(rivals: { key: string; name: string; x: number; y: number; distanceM: number; weight: number }[], radiusM: number) {
+    this.region.clear();
+    for (const el of this.rivalPins) el.remove();
+    this.rivalPins = [];
+    // Once real rivals are known, the single legacy rival label is redundant.
+    for (const p of this.pins.filter(p => p.el.classList.contains('rival'))) p.el.remove();
+    this.pins = this.pins.filter(p => !p.el.classList.contains('rival'));
+
+    const R = this.mapRadius;
+    const table = new THREE.Mesh(
+      new THREE.CircleGeometry(Math.max(radiusM * 1.08, R * 1.6), 96).rotateX(-Math.PI / 2),
+      // Unlit, a shade off the paper background: reads as a map table, not a brown disc.
+      new THREE.MeshBasicMaterial({ color: 0xebe4d6 })
+    );
+    table.position.y = -8.2;
+    this.region.add(table);
+
+    const ringWidth = Math.max(2, radiusM * 0.006);
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(radiusM - ringWidth, radiusM, 128).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: COLORS.rival, transparent: true, opacity: 0.55 })
+    );
+    ring.position.y = radiusM > R ? -8.1 : 0.4;
+    this.region.add(ring);
+
+    // Pins scale with the view so far-out rivals stay visible when zoomed out.
+    const s = Math.max(1, radiusM / 600);
+    const pinGeom = new THREE.CylinderGeometry(0.9 * s, 0.9 * s, 16 * s, 8).translate(0, 8 * s, 0);
+    const headGeom = new THREE.SphereGeometry(3 * s, 12, 8).translate(0, 17 * s, 0);
+    const mat = new THREE.MeshLambertMaterial({ color: COLORS.rival });
+    const strongest = [...rivals].sort((a, b) => b.weight - a.weight).slice(0, 6);
+    for (const r of rivals) {
+      const inside = Math.abs(r.x) <= R && Math.abs(r.y) <= R;
+      const base = inside ? 10 : -8;
+      for (const g of [pinGeom, headGeom]) {
+        const m = new THREE.Mesh(g, mat);
+        m.position.copy(toWorld(r.x, r.y, base));
+        m.castShadow = true;
+        this.region.add(m);
+      }
+      if (strongest.includes(r)) {
+        const miles = r.distanceM / 1609;
+        this.addPin('rival', r.name, miles < 1 ? `${miles.toFixed(2)} mi` : `${miles.toFixed(1)} mi`, toWorld(r.x, r.y, base + 22 * s));
+        this.rivalPins.push(this.pins[this.pins.length - 1].el);
+      }
+    }
+    this.viewSizeGoal = Math.max(R * 1.35, radiusM * 2.3);
   }
 
   private heightAt(map: AreaMap, building: number) {

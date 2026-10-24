@@ -165,6 +165,50 @@ export class Neighborhood {
     return Math.floor(hash01('home', agentKey) * this.homes.length);
   }
 
+  private trees = new Map<string, Int32Array>();
+
+  /** Is a point inside the detailed model (the plinth)? */
+  inside(x: number, y: number): boolean {
+    return Math.abs(x) <= this.map.radius && Math.abs(y) <= this.map.radius;
+  }
+
+  /** Where a straight line from the café toward (x, y) leaves the model. */
+  edgeToward(x: number, y: number): Pt {
+    const R = this.map.radius * 0.98;
+    const s = R / Math.max(Math.abs(x), Math.abs(y), 1e-6);
+    return [x * s, y * s];
+  }
+
+  /**
+   * Walking route from a home toward any target (a rival). Inside the model it follows the
+   * streets to the target; for a farther target it walks to the model's edge in its direction.
+   */
+  routeToward(homeSlot: number, key: string, tx: number, ty: number): Route {
+    const cacheKey = `${homeSlot}:${key}`;
+    const cached = this.routeCache.get(cacheKey);
+    if (cached) return cached;
+    const dest: Pt = this.inside(tx, ty) ? [tx, ty] : this.edgeToward(tx, ty);
+    let tree = this.trees.get(key);
+    if (!tree && this.graph.pts.length) {
+      tree = this.graph.treeTo(this.graph.nearest(dest[0], dest[1]));
+      this.trees.set(key, tree);
+    }
+    const door = this.homeDoors[homeSlot] ?? [0, 0];
+    const pts: Pt[] = [door];
+    let n = this.graph.pts.length ? this.graph.nearest(...door) : -1;
+    let guard = 0;
+    while (tree && n >= 0 && guard++ < 5000) {
+      pts.push(this.graph.pts[n]);
+      const next = tree[n];
+      if (next < 0) break;
+      n = next;
+    }
+    pts.push(dest);
+    const route = makeRoute(pts);
+    this.routeCache.set(cacheKey, route);
+    return route;
+  }
+
   /** Walking route from a home to the café or rival, along the streets. */
   route(homeSlot: number, place: 'here' | 'competitor'): Route {
     const key = `${homeSlot}:${place}`;

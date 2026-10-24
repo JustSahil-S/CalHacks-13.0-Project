@@ -40,12 +40,14 @@ import FetchAreaMapReducer from "./fetch_area_map_reducer";
 import LoadTwinReducer from "./load_twin_reducer";
 import PauseUniverseReducer from "./pause_universe_reducer";
 import ReassembleBuildReducer from "./reassemble_build_reducer";
+import RefreshRivalsReducer from "./refresh_rivals_reducer";
 import ResetAllReducer from "./reset_all_reducer";
 import RetryBuildReducer from "./retry_build_reducer";
 import RunUniverseReducer from "./run_universe_reducer";
 import SetPricesReducer from "./set_prices_reducer";
 import StartClockReducer from "./start_clock_reducer";
 import StartExperimentReducer from "./start_experiment_reducer";
+import StartExperimentRReducer from "./start_experiment_r_reducer";
 import StartReviewScanReducer from "./start_review_scan_reducer";
 import StartTwinBuildReducer from "./start_twin_build_reducer";
 import StopClockReducer from "./stop_clock_reducer";
@@ -64,16 +66,21 @@ import DecisionCacheRow from "./decision_cache_table";
 import DecisionRequestRow from "./decision_request_table";
 import EventRow from "./event_table";
 import ExperimentRow from "./experiment_table";
+import ExperimentRadiusRow from "./experiment_radius_table";
 import ExperimentResultRow from "./experiment_result_table";
 import LlmLogRow from "./llm_log_table";
 import MemoryRow from "./memory_table";
 import MenuItemRow from "./menu_item_table";
 import MenuSourceRow from "./menu_source_table";
 import ReviewRow from "./review_table";
+import RivalRow from "./rival_table";
+import RivalScanRow from "./rival_scan_table";
+import RivalTallyRow from "./rival_tally_table";
 import TracedRow from "./traced_table";
 import TwinBuildRow from "./twin_build_table";
 import TwinProfileRow from "./twin_profile_table";
 import UniverseRow from "./universe_table";
+import UniverseBuildRow from "./universe_build_table";
 import VisitRow from "./visit_table";
 
 /** Type-only namespace exports for generated type groups. */
@@ -202,6 +209,17 @@ const tablesSchema = __schema({
       { name: 'experiment_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, ExperimentRow),
+  experimentRadius: __table({
+    name: 'experiment_radius',
+    indexes: [
+      { accessor: 'experimentId', name: 'experiment_radius_experiment_id_idx_btree', algorithm: 'btree', columns: [
+        'experimentId',
+      ] },
+    ],
+    constraints: [
+      { name: 'experiment_radius_experiment_id_key', constraint: 'unique', columns: ['experimentId'] },
+    ],
+  }, ExperimentRadiusRow),
   experimentResult: __table({
     name: 'experiment_result',
     indexes: [
@@ -280,6 +298,45 @@ const tablesSchema = __schema({
       { name: 'review_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, ReviewRow),
+  rival: __table({
+    name: 'rival',
+    indexes: [
+      { accessor: 'buildId', name: 'rival_build_id_idx_btree', algorithm: 'btree', columns: [
+        'buildId',
+      ] },
+      { accessor: 'id', name: 'rival_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'rival_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, RivalRow),
+  rivalScan: __table({
+    name: 'rival_scan',
+    indexes: [
+      { accessor: 'buildId', name: 'rival_scan_build_id_idx_btree', algorithm: 'btree', columns: [
+        'buildId',
+      ] },
+    ],
+    constraints: [
+      { name: 'rival_scan_build_id_key', constraint: 'unique', columns: ['buildId'] },
+    ],
+  }, RivalScanRow),
+  rivalTally: __table({
+    name: 'rival_tally',
+    indexes: [
+      { accessor: 'id', name: 'rival_tally_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'universeId', name: 'rival_tally_universe_id_idx_btree', algorithm: 'btree', columns: [
+        'universeId',
+      ] },
+    ],
+    constraints: [
+      { name: 'rival_tally_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, RivalTallyRow),
   traced: __table({
     name: 'traced',
     indexes: [
@@ -327,6 +384,17 @@ const tablesSchema = __schema({
       { name: 'universe_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, UniverseRow),
+  universeBuild: __table({
+    name: 'universe_build',
+    indexes: [
+      { accessor: 'universeId', name: 'universe_build_universe_id_idx_btree', algorithm: 'btree', columns: [
+        'universeId',
+      ] },
+    ],
+    constraints: [
+      { name: 'universe_build_universe_id_key', constraint: 'unique', columns: ['universeId'] },
+    ],
+  }, UniverseBuildRow),
   visit: __table({
     name: 'visit',
     indexes: [
@@ -351,12 +419,14 @@ const reducersSchema = __reducers(
   __reducerSchema("load_twin", LoadTwinReducer),
   __reducerSchema("pause_universe", PauseUniverseReducer),
   __reducerSchema("reassemble_build", ReassembleBuildReducer),
+  __reducerSchema("refresh_rivals", RefreshRivalsReducer),
   __reducerSchema("reset_all", ResetAllReducer),
   __reducerSchema("retry_build", RetryBuildReducer),
   __reducerSchema("run_universe", RunUniverseReducer),
   __reducerSchema("set_prices", SetPricesReducer),
   __reducerSchema("start_clock", StartClockReducer),
   __reducerSchema("start_experiment", StartExperimentReducer),
+  __reducerSchema("start_experiment_r", StartExperimentRReducer),
   __reducerSchema("start_review_scan", StartReviewScanReducer),
   __reducerSchema("start_twin_build", StartTwinBuildReducer),
   __reducerSchema("stop_clock", StopClockReducer),

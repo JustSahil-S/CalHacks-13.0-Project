@@ -464,6 +464,21 @@ function resolveMenu(
     const pages = datasetItems(ctx, token, crawl.datasetId, 'url,markdown,text,html', 5);
     const read = readMenuFromPages(ctx, pages, place);
     if (read.items.length >= 3) {
+      const isDrink = (c: string) => /coffee|tea|drink/i.test(c);
+      // A café menu with no drinks usually means we found the food page only: add estimated drinks.
+      if (read.items.filter(i => isDrink(i.category)).length < 2) {
+        const est = estimateMenu(ctx, place, reviews);
+        const names = new Set(read.items.map(i => i.name.toLowerCase()));
+        const keys = new Set(read.items.map(i => i.key));
+        const drinks = est.items.filter(i => isDrink(i.category) && !names.has(i.name.toLowerCase()) && !keys.has(i.key));
+        if (drinks.length) {
+          return {
+            items: [...drinks.slice(0, 8), ...read.items].slice(0, 16),
+            source: read.usedAssets ? 'menu photo' : 'website',
+            detail: `${read.items.length} items read from ${url}; ${Math.min(8, drinks.length)} drinks estimated (the page we found had no drink prices). ${read.note}`.trim(),
+          };
+        }
+      }
       return {
         items: read.items,
         source: read.usedAssets ? 'menu photo' : 'website',

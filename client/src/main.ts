@@ -93,6 +93,7 @@ connect({
         'SELECT * FROM competitor',
         'SELECT * FROM menu_source',
         'SELECT * FROM admin',
+        'SELECT * FROM experiment_radius',
       ]);
     c.db.admin.onInsert(() => (dirty = true));
     const mark = () => (dirty = true);
@@ -167,9 +168,14 @@ function selectBuild(id: bigint) {
   hood = new Neighborhood(map);
   scene.setMap(map);
   crowd = new Crowd(scene, hood);
-  subscribeSlot('root', [`SELECT * FROM agent WHERE universe_id = ${rootUniverse}`], () => {
-    crowd?.setAgents([...conn!.db.agent.iter()].filter(a => a.universeId === rootUniverse).map(a => a.key));
-  });
+  subscribeSlot(
+    'root',
+    [`SELECT * FROM agent WHERE universe_id = ${rootUniverse}`, `SELECT * FROM rival WHERE build_id = ${id}`],
+    () => {
+      crowd?.setAgents([...conn!.db.agent.iter()].filter(a => a.universeId === rootUniverse).map(a => a.key));
+      applyRadius(sliderRadius());
+    }
+  );
   const latest = [...conn.db.experiment.iter()].filter(e => e.baseUniverseId === rootUniverse).sort((a, b) => Number(b.id - a.id))[0];
   if (latest) setExperiment(latest.id);
   else {
@@ -180,6 +186,60 @@ function selectBuild(id: bigint) {
   renderMenuEditor();
   dirty = true;
 }
+
+// ---- Competitor radius ---------------------------------------------------------------
+
+const RADIUS_STEPS_MI = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 5, 7];
+const DEFAULT_RADIUS_M = 2414; // 1.5 miles, same as the server
+const miToM = (mi: number) => Math.round(mi * 1609.34);
+
+function sliderRadius(): number {
+  return miToM(RADIUS_STEPS_MI[Number($<HTMLInputElement>('radius').value)] ?? 1.5);
+}
+
+function setSliderTo(radiusM: number) {
+  const mi = radiusM / 1609.34;
+  let best = 0;
+  RADIUS_STEPS_MI.forEach((s, i) => {
+    if (Math.abs(s - mi) < Math.abs(RADIUS_STEPS_MI[best] - mi)) best = i;
+  });
+  $<HTMLInputElement>('radius').value = String(best);
+  $('radius-label').textContent = `${RADIUS_STEPS_MI[best]} mi`;
+}
+
+/** Same pull formula as the server (rivals.ts): rating, distance, price. */
+function pull(r: { distanceM: number; rating: number; priceIndex: number }): number {
+  const quality = Math.pow(Math.max(1, r.rating) / 4.5, 3);
+  const nearness = Math.exp(-r.distanceM / 1200);
+  const price = r.priceIndex < 0.95 ? 1.15 : r.priceIndex > 1.05 ? 0.85 : 1;
+  return quality * nearness * price;
+}
+
+function rivalsOfBuild() {
+  if (!conn || buildId === null) return [];
+  return [...conn.db.rival.iter()].filter(r => r.buildId === buildId);
+}
+
+/** Draw the ring and the rivals within `radiusM`, and let walkers find every rival. */
+function applyRadius(radiusM: number) {
+  if (!crowd) return;
+  const all = rivalsOfBuild();
+  crowd.setRivals(all.map(r => ({ key: r.key, x: r.x, y: r.y })));
+  const inRange = all.filter(r => r.distanceM <= radiusM);
+  scene.setRivals(
+    inRange.map(r => ({ key: r.key, name: r.name, x: r.x, y: r.y, distanceM: r.distanceM, weight: pull(r) })),
+    radiusM
+  );
+  $('radius-count').textContent = all.length
+    ? `${inRange.length} coffee place${inRange.length === 1 ? '' : 's'} in range (of ${all.length} within 7 mi)`
+    : 'Competitors not scanned for this café yet';
+}
+
+$('radius').addEventListener('input', () => {
+  const r = sliderRadius();
+  $('radius-label').textContent = `${RADIUS_STEPS_MI[Number($<HTMLInputElement>('radius').value)]} mi`;
+  applyRadius(r);
+});
 
 // ---- Experiments -------------------------------------------------------------------
 
@@ -192,8 +252,15 @@ function setExperiment(expId: bigint) {
   const unis = experimentUniverses(expId);
   subscribeSlot(
     'experiment',
-    unis.map(u => `SELECT * FROM daily_metric WHERE universe_id = ${u.id}`)
+    unis.flatMap(u => [
+      `SELECT * FROM daily_metric WHERE universe_id = ${u.id}`,
+      `SELECT * FROM rival_tally WHERE universe_id = ${u.id}`,
+    ])
   );
+  // Show the radius this experiment ran with (older ones default to 1.5 miles).
+  const expRadius = conn!.db.experimentRadius.experimentId.find(expId)?.radiusM ?? DEFAULT_RADIUS_M;
+  setSliderTo(expRadius);
+  applyRadius(expRadius);
   const exp = conn!.db.experiment.id.find(expId)!;
   const options: { label: string }[] = JSON.parse(exp.optionsJson);
   const traced = (label: string) => unis.find(u => u.optionLabel === label && u.copyNumber === 1);
@@ -266,8 +333,9 @@ $('run-btn').addEventListener('click', () => {
   if (!parts.length) return toast('Change at least one price first.');
   const copies = Math.max(2, Math.min(20, Number($<HTMLInputElement>('copies').value) || 10));
   const days = Math.max(14, Math.min(180, Number($<HTMLInputElement>('days').value) || 60));
-  const label = parts.length === 1 ? parts[0] : `${parts.length} price changes`;
-  conn.reducers.startExperiment({
+  const radiusM = sliderRadius();
+  const label = `${parts.length === 1 ? parts[0] : `${parts.length} price changes`} · rivals within ${RADIUS_STEPS_MI[Number($<HTMLInputElement>('radius').value)]} mi`;
+  conn.reducers.startExperimentR({
     baseUniverseId: rootUniverse,
     label,
     optionsJson: JSON.stringify([
@@ -277,6 +345,7 @@ $('run-btn').addEventListener('click', () => {
     copies,
     days,
     brain: 'ai',
+    radiusM,
   }).then(
     () => toast(`Forking ${copies} futures × 2 options. Claude is deciding for customers who notice.`),
     err => toast(String(err?.message ?? err))
@@ -490,8 +559,40 @@ function renderResult(exp: Experiment | null) {
         <div><b>${pct(visits)}</b><span>visits</span></div>
         <div><b>${stars >= 0 ? '+' : ''}${stars.toFixed(2)}★</b><span>rating</span></div>
         <div><b>${(chg.priceMentionShare * 100).toFixed(1)}%</b><span>reviews on price</span></div>
-      </div>`;
+      </div>
+      ${gainersLine(exp)}`;
   }
+}
+
+/** "Who won your customers": rivals whose visits rose most vs no change, per day of real traffic. */
+function gainersLine(exp: Experiment): string {
+  const unis = experimentUniverses(exp.id);
+  const ctlLabel = unis.find(u => u.optionLabel === 'no change')?.optionLabel ?? unis[0]?.optionLabel;
+  const perOption = new Map<string, Map<string, number>>();
+  const copies = new Map<string, number>();
+  for (const u of unis) {
+    copies.set(u.optionLabel, (copies.get(u.optionLabel) ?? 0) + 1);
+    const m = perOption.get(u.optionLabel) ?? new Map<string, number>();
+    for (const t of conn!.db.rivalTally.iter()) {
+      if (t.universeId === u.id) m.set(t.rivalKey, (m.get(t.rivalKey) ?? 0) + t.visits);
+    }
+    perOption.set(u.optionLabel, m);
+  }
+  const chgLabel = [...perOption.keys()].find(l => l !== ctlLabel);
+  if (!chgLabel || !ctlLabel) return '';
+  const names = new Map(rivalsOfBuild().map(r => [r.key, r.name]));
+  const scale = conn!.db.cafe.universeId.find(rootUniverse ?? 0n)?.customerScale ?? 4;
+  const perDay = (n: number, label: string) => (n / (copies.get(label) || 1) / Math.max(1, exp.days)) * scale;
+  const ctl = perOption.get(ctlLabel)!;
+  const gains = [...perOption.get(chgLabel)!]
+    .map(([k, v]) => [k, perDay(v, chgLabel) - perDay(ctl.get(k) ?? 0, ctlLabel)] as const)
+    .filter(([, d]) => d >= 0.5)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3);
+  if (!gains.length) return '';
+  return `<p class="gainers">Who won your customers: ${gains
+    .map(([k, d]) => `<b>${esc(names.get(k) ?? k)}</b> +${d.toFixed(1)}/day`)
+    .join(' · ')}</p>`;
 }
 
 function renderChart() {
