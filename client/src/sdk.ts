@@ -11,7 +11,7 @@
 import { DbConnection, type SubscriptionHandle } from './module_bindings';
 import { Neighborhood, type AreaMap } from './geo';
 import { Crowd, type Tally } from './people';
-import { IsoScene } from './scene';
+import { TileScene } from './tilescene';
 
 export const DEFAULT_RADIUS_M = 2414; // 1.5 miles
 export const MAX_RADIUS_M = 11265; // 7 miles
@@ -371,7 +371,7 @@ export interface CustomerInfo {
 
 /** The live isometric neighborhood with walking customers, as one component. */
 export class ForkMap {
-  private scene: IsoScene;
+  private scene: TileScene;
   private hood: Neighborhood | null = null;
   private crowd: Crowd | null = null;
   private buildId: bigint | null = null;
@@ -389,7 +389,7 @@ export class ForkMap {
 
   constructor(container: HTMLElement, private fork: Fork) {
     injectPinStyles();
-    this.scene = new IsoScene(container);
+    this.scene = new TileScene(container);
     this.scene.onFrame = dt => this.tick(dt);
     this.scene.onPick = i => {
       this.selected = i;

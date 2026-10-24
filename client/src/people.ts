@@ -3,7 +3,15 @@
 // the detailed model are walked toward until the model's edge.
 import * as THREE from 'three';
 import { hash01, pointAt, type Neighborhood, type Pt, type Route } from './geo';
-import { PAWN, type IsoScene } from './scene';
+import { PAWN } from './scene';
+
+/** What the crowd needs from a renderer (the 3D model or the tile map). */
+export interface PeopleLayer {
+  setPeopleCount(n: number): void;
+  placePerson(i: number, x: number, y: number, color: THREE.Color): void;
+  hidePerson(i: number): void;
+  commitPeople(): void;
+}
 
 const DIM = new THREE.Color(0.55, 0.5, 0.45);
 
@@ -33,7 +41,7 @@ export class Crowd {
   private rivals = new Map<string, RivalPoint>();
   positions = new Map<number, Pt>(); // instance -> current position (visible people only)
 
-  constructor(private scene: IsoScene, private hood: Neighborhood) {}
+  constructor(private scene: PeopleLayer, private hood: Neighborhood) {}
 
   setAgents(keys: string[]) {
     this.keys = [...keys].sort();
@@ -81,6 +89,8 @@ export class Crowd {
     const noticed = this.notices.get(tick);
     // Walking speed scaled to the map: crossing the whole area takes ~1/5 of a day.
     const speed = (this.hood.map.radius * 2) / 0.2;
+    // Far rivals (miles away) would take days at that pace; any trip takes at most ~0.3 day.
+    const tripDays = (len: number) => Math.min(0.3, Math.max(0.03, len / speed));
     this.positions.clear();
 
     this.keys.forEach((key, i) => {
@@ -91,7 +101,7 @@ export class Crowd {
         return;
       }
       const route = this.routeFor(i, v);
-      const walk = Math.max(0.03, route.length / speed);
+      const walk = tripDays(route.length);
       const depart = 0.04 + hash01('leave', key, tick) * Math.max(0.05, 0.9 - 2 * walk - 0.1);
       const stay = 0.05 + hash01('stay', key, tick) * 0.07;
       const arrive = depart + walk;

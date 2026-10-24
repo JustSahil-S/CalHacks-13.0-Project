@@ -181,7 +181,8 @@ export class Neighborhood {
 
   /**
    * Walking route from a home toward any target (a rival). Inside the model it follows the
-   * streets to the target; for a farther target it walks to the model's edge in its direction.
+   * streets to the target; a farther target is reached by the streets to the model's edge in
+   * its direction, then straight on (the tile map shows the whole way).
    */
   routeToward(homeSlot: number, key: string, tx: number, ty: number): Route {
     const cacheKey = `${homeSlot}:${key}`;
@@ -204,6 +205,7 @@ export class Neighborhood {
       n = next;
     }
     pts.push(dest);
+    if (dest[0] !== tx || dest[1] !== ty) pts.push([tx, ty]);
     const route = makeRoute(pts);
     this.routeCache.set(cacheKey, route);
     return route;
