@@ -66,7 +66,9 @@ if (cmd === 'load-twin') {
 } else if (cmd === 'experiment') {
   const e = JSON.parse(await readFile(a1, 'utf8'));
   if (a2) e.baseUniverseId = Number(a2); // optional override: node tools/stdb.mjs experiment <file> <baseUniverseId>
-  await call("start_experiment", [e.baseUniverseId, e.label, JSON.stringify(e.options), e.copies, e.days, e.brain ?? "rules"]);
+  const args = [e.baseUniverseId, e.label, JSON.stringify(e.options), e.copies, e.days, e.brain ?? 'rules'];
+  // Optional "radiusM": competitors within that many meters (default 1.5 miles).
+  await call(e.radiusM ? 'start_experiment_r' : 'start_experiment', e.radiusM ? [...args, e.radiusM] : args);
   console.log(`Started "${e.label}": ${e.options.length} options x ${e.copies} copies x ${e.days} days`);
 } else if (cmd === 'build') {
   const [, , , menuFile, query, cutoff = '', label = ''] = process.argv;

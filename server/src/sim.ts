@@ -4,6 +4,7 @@ import type { InferSchema, ReducerCtx } from 'spacetimedb/server';
 import spacetimedb from './schema';
 import { hash32, roll } from './rng';
 import { competitorSignature, orderPrice, situationKey } from './brain';
+import { chooseRival, rivalSet, switchingEase } from './rivals';
 
 export type Ctx = ReducerCtx<InferSchema<typeof spacetimedb>>;
 
@@ -159,12 +160,13 @@ export function applyPrices(ctx: Ctx, universeId: bigint, changes: PriceChanges,
 function noticePrice(
   a: { priceSensitivity: number; pHere: number; pCompetitor: number; pSkip: number },
   oldCents: number,
-  newCents: number
+  newCents: number,
+  ease = 1 // how easy switching is given the rivals in range (rivals.ts switchingEase)
 ) {
   const pct = oldCents > 0 ? (newCents - oldCents) / oldCents : 0;
   let { pHere, pCompetitor, pSkip } = a;
   if (pct > 0) {
-    const moved = pHere * clamp(pct * a.priceSensitivity * 2.5, 0, 0.8);
+    const moved = pHere * clamp(pct * a.priceSensitivity * 2.5 * ease, 0, 0.8);
     pHere -= moved;
     pCompetitor += moved * 0.65;
     pSkip += moved * 0.35;
@@ -194,6 +196,9 @@ export function stepUniverse(ctx: Ctx, universeId: bigint) {
   const agents = [...ctx.db.agent.universeId.filter(universeId)];
   const compSig = competitorSignature(ctx, universeId);
   const isTraced = ctx.db.traced.universeId.find(universeId) !== null;
+  const rset = rivalSet(ctx, universeId); // null for universes made before rivals existed
+  const ease = switchingEase(rset);
+  const rivalVisits = new Map<string, number>();
 
   // Pass 1: where does everyone go today?
   let hereCount = 0;
@@ -214,10 +219,17 @@ export function stepUniverse(ctx: Ctx, universeId: bigint) {
           u.brain === 'ai'
             ? ctx.db.decisionCache.situationKey.find(situationKey(a, now, compSig))
             : null;
-        const ai = row && row.pHere >= 0 ? row : null; // null -> rules brain
+        const ai = row && row.pHere >= 0 ? row : null; // null -> rules brain only
+        // Blend: Claude judges the person; an economic rule (bigger jump x more price-conscious
+        // x easier switching = more leaving) keeps extreme prices from looking free.
+        const rules = noticePrice(a, a.refPriceCents, now, ease);
         const odds = ai
-          ? { pHere: ai.pHere, pCompetitor: ai.pCompetitor, pSkip: ai.pSkip }
-          : noticePrice(a, a.refPriceCents, now);
+          ? {
+              pHere: (ai.pHere + rules.pHere) / 2,
+              pCompetitor: (ai.pCompetitor + rules.pCompetitor) / 2,
+              pSkip: (ai.pSkip + rules.pSkip) / 2,
+            }
+          : rules;
         next = {
           ...a,
           pHere: odds.pHere,
@@ -255,8 +267,22 @@ export function stepUniverse(ctx: Ctx, universeId: bigint) {
       cogs += orderPrice(costs, a.usualOrder) * scale;
       visitors.push({ a: { ...next, visitsHere: next.visitsHere + 1 }, feltOverride });
     } else if (r < a.pHere + a.pCompetitor) {
+      // Which rival? Weighted by rating, distance and price, among those in this experiment's radius.
+      const rivalKey = rset ? chooseRival(rset, roll(u.seed, tick, a.key, 'which')) : null;
+      if (rset && !rivalKey) continue; // no coffee place in range: they go without
       competitorCount++;
-      if (isTraced) ctx.db.visit.insert({ id: 0n, universeId, tick, agentKey: a.key, place: 'competitor' });
+      if (rivalKey) rivalVisits.set(rivalKey, (rivalVisits.get(rivalKey) ?? 0) + 1);
+      if (isTraced) {
+        ctx.db.visit.insert({ id: 0n, universeId, tick, agentKey: a.key, place: rivalKey ? `rival:${rivalKey}` : 'competitor' });
+      }
+    }
+  }
+  if (rivalVisits.size) {
+    const tallies = new Map([...ctx.db.rivalTally.universeId.filter(universeId)].map(t => [t.rivalKey, t]));
+    for (const [rivalKey, n] of rivalVisits) {
+      const t = tallies.get(rivalKey);
+      if (t) ctx.db.rivalTally.id.update({ ...t, visits: t.visits + n });
+      else ctx.db.rivalTally.insert({ id: 0n, universeId, rivalKey, visits: n });
     }
   }
 
@@ -348,7 +374,8 @@ export function startExperiment(
   options: ExperimentOption[],
   copies: number,
   days: number,
-  brain: string
+  brain: string,
+  radiusM: number
 ): bigint {
   const base = ctx.db.universe.id.find(baseUniverseId);
   if (!base) throw new Error(`no universe ${baseUniverseId}`);
@@ -361,6 +388,8 @@ export function startExperiment(
     days,
     status: 'running',
   });
+  ctx.db.experimentRadius.insert({ experimentId: exp.id, radiusM });
+  const buildId = ctx.db.universeBuild.universeId.find(baseUniverseId)?.buildId;
   for (const option of options) {
     for (let k = 1; k <= copies; k++) {
       const u = ctx.db.universe.insert({
@@ -378,6 +407,7 @@ export function startExperiment(
       });
       copyWorld(ctx, baseUniverseId, u.id);
       applyPrices(ctx, u.id, option.prices, base.currentTick);
+      if (buildId !== undefined) ctx.db.universeBuild.insert({ universeId: u.id, buildId });
       if (k === 1) ctx.db.traced.insert({ universeId: u.id }); // the copy the viewer animates
     }
   }

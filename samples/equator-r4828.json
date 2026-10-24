@@ -1,0 +1,2 @@
+{ "baseUniverseId": 137, "label": "Latte +50c, rivals within 4828 m", "brain": "ai", "copies": 10, "days": 60, "radiusM": 4828,
+  "options": [ { "label": "no change", "prices": {} }, { "label": "price change", "prices": { "latte": 575 } } ] }

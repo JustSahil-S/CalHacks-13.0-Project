@@ -6,6 +6,7 @@ import { ScheduleAt } from 'spacetimedb';
 import { callClaude, type ProcCtx } from './claude';
 import { hash32 } from './rng';
 import { loadTwin, type TwinInput } from './sim';
+import { MAX_RADIUS_M, rivalsFromPlaces } from './rivals';
 import { estimateMenu, isDeliveryUrl, MENU_CRAWLER, menuCrawlInput, menuSearchInput, pickMenuUrl, readMenuFromPages, SEARCH_ACTOR } from './menu';
 
 const PLACES_ACTOR = 'compass~crawler-google-places';
@@ -160,16 +161,7 @@ export function advanceBuild(ctx: ProcCtx, buildId: bigint) {
       if (!competitorsRunId) {
         competitorsRunId =
           place.location && b.cutoffDate !== SCAN
-            ? startRun(ctx, token!, PLACES_ACTOR, {
-                searchStringsArray: ['coffee shop'],
-                customGeolocation: {
-                  type: 'Point',
-                  coordinates: [place.location.lng, place.location.lat],
-                  radiusKm: 1,
-                },
-                maxCrawledPlacesPerSearch: 10,
-                language: 'en',
-              })
+            ? startRun(ctx, token!, PLACES_ACTOR, rivalSearchInput(place.location))
             : 'none';
         update({ competitorsRunId });
       }
@@ -320,6 +312,12 @@ export function advanceBuild(ctx: ProcCtx, buildId: bigint) {
       const twin = assembleTwin(b.placeJson, b.competitorsJson, b.menuJson, profiles, b.label);
       ctx.withTx(tx => {
         const universeId = loadTwin(tx, twin);
+        // Every coffee place within 7 miles, for the competitor radius.
+        tx.db.universeBuild.insert({ universeId, buildId });
+        for (const r of tx.db.rival.buildId.filter(buildId)) tx.db.rival.id.delete(r.id);
+        for (const r of rivalsFromPlaces(JSON.parse(b.placeJson), JSON.parse(b.competitorsJson || '[]'))) {
+          tx.db.rival.insert({ id: 0n, buildId, ...r });
+        }
         const cur = tx.db.twinBuild.id.find(buildId)!;
         tx.db.twinBuild.id.update({
           ...cur,
@@ -342,6 +340,78 @@ export function advanceBuild(ctx: ProcCtx, buildId: bigint) {
       return;
     }
     update({ status: 'failed', detail: String(e).slice(0, 500) });
+  }
+}
+
+// ---- Rivals within 7 miles ----------------------------------------------------------------
+
+/** Coffee places within 7 miles; two searches so both "coffee shop" and "cafe" listings come back. */
+function rivalSearchInput(location: { lat: number; lng: number }) {
+  return {
+    searchStringsArray: ['coffee shop', 'cafe'],
+    customGeolocation: { type: 'Point', coordinates: [location.lng, location.lat], radiusKm: MAX_RADIUS_M / 1000 },
+    maxCrawledPlacesPerSearch: 40,
+    language: 'en',
+  };
+}
+
+/** Re-scrape an existing build's rivals: queued -> running -> done (or failed). */
+export function advanceRivalScan(ctx: ProcCtx, buildId: bigint) {
+  const scan = ctx.withTx(tx => tx.db.rivalScan.buildId.find(buildId));
+  const b = ctx.withTx(tx => tx.db.twinBuild.id.find(buildId));
+  if (!scan || !b || scan.status === 'done' || scan.status === 'failed') return;
+  const set = (patch: Partial<typeof scan>) =>
+    ctx.withTx(tx => {
+      const cur = tx.db.rivalScan.buildId.find(buildId);
+      if (cur) tx.db.rivalScan.buildId.update({ ...cur, ...patch });
+    });
+  const later = (s: number) =>
+    ctx.withTx(tx =>
+      tx.db.rivalJob.insert({
+        scheduledId: 0n,
+        scheduledAt: ScheduleAt.time(tx.timestamp.microsSinceUnixEpoch + BigInt(s) * 1_000_000n),
+        buildId,
+      })
+    );
+  try {
+    const token = ctx.env.APIFY_TOKEN;
+    if (!token) throw new Error('APIFY_TOKEN is not set for this database');
+    const place: Place = JSON.parse(b.placeJson);
+    if (!place.location) throw new Error('café has no location');
+    if (scan.status === 'queued') {
+      const runId = startRun(ctx, token, PLACES_ACTOR, rivalSearchInput(place.location));
+      set({ status: 'running', runId, detail: 'Finding coffee places within 7 miles' });
+      later(10);
+      return;
+    }
+    const run = runStatus(ctx, token, scan.runId);
+    if (stillRunning(run.status)) return later(10);
+    if (run.status !== 'SUCCEEDED') throw new Error(`rival search ${run.status}`);
+    const places = datasetItems(ctx, token, run.datasetId, PLACE_FIELDS, 100);
+    const rivals = rivalsFromPlaces(place, places);
+    ctx.withTx(tx => {
+      for (const r of tx.db.rival.buildId.filter(buildId)) tx.db.rival.id.delete(r.id);
+      for (const r of rivals) tx.db.rival.insert({ id: 0n, buildId, ...r });
+      // Map the twin (and its existing experiment copies) to this build so they use the rivals.
+      const root = b.universeId;
+      if (root !== 0n) {
+        for (const u of tx.db.universe.iter()) {
+          if ((u.id === root || u.parentId === root) && !tx.db.universeBuild.universeId.find(u.id)) {
+            tx.db.universeBuild.insert({ universeId: u.id, buildId });
+          }
+        }
+      }
+      const cur = tx.db.twinBuild.id.find(buildId);
+      if (cur) tx.db.twinBuild.id.update({ ...cur, competitorsJson: JSON.stringify(places) });
+    });
+    set({ status: 'done', detail: `${rivals.length} coffee places within 7 miles` });
+  } catch (e) {
+    if (e instanceof ApifyBusy) {
+      set({ detail: 'Waiting for a free Apify slot' });
+      later(20);
+      return;
+    }
+    set({ status: 'failed', detail: String(e).slice(0, 400) });
   }
 }
 

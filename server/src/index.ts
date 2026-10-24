@@ -2,10 +2,11 @@
 // the AI brain's caching and prompt in brain.ts.
 import { t, SenderError } from 'spacetimedb/server';
 import { ScheduleAt } from 'spacetimedb';
-import spacetimedb, { buildJob, clockJob, decisionJob, mapJob, profileJob } from './schema';
+import spacetimedb, { buildJob, clockJob, decisionJob, mapJob, profileJob, rivalJob } from './schema';
 import { fetchAreaMap } from './areamap';
 import { callClaude } from './claude';
-import { advanceBuild, inspectMenuCrawl, profileBatch, SCAN } from './pipeline';
+import { advanceBuild, advanceRivalScan, inspectMenuCrawl, profileBatch, SCAN } from './pipeline';
+import { DEFAULT_RADIUS_M, MAX_RADIUS_M } from './rivals';
 import {
   applyPrices,
   loadTwin,
@@ -99,30 +100,42 @@ export const set_prices = spacetimedb.reducer(
  * {"label":"latte +50c","prices":{"oat_latte":600}}]. The first option is the control.
  * brain: "ai" (Claude decides noticed changes) or "rules".
  */
-export const start_experiment = spacetimedb.reducer(
-  {
-    baseUniverseId: t.u64(),
-    label: t.string(),
-    optionsJson: t.string(),
-    copies: t.u32(),
-    days: t.u32(),
-    brain: t.string(),
-  },
-  (ctx, { baseUniverseId, label, optionsJson, copies, days, brain }) => {
-    const options = parseJson<ExperimentOption[]>(optionsJson, 'optionsJson');
-    if (options.length < 2) throw new SenderError('need a control plus at least one option');
-    if (copies < 1 || copies > 50) throw new SenderError('copies must be 1..50');
-    if (brain !== 'ai' && brain !== 'rules') throw new SenderError('brain must be "ai" or "rules"');
-    if (!isAdmin(ctx)) {
-      // Public demo limits: keep Claude spend small and the shared database responsive.
-      if (copies > 10 || days > 90) throw new SenderError('Demo limit: up to 10 copies and 90 days.');
-      if ([...ctx.db.experiment.iter()].some(e => e.status === 'running')) {
-        throw new SenderError('Another simulation is running. Try again in a minute.');
-      }
+function launchExperiment(
+  ctx: Ctx,
+  a: { baseUniverseId: bigint; label: string; optionsJson: string; copies: number; days: number; brain: string },
+  radiusM: number
+) {
+  const options = parseJson<ExperimentOption[]>(a.optionsJson, 'optionsJson');
+  if (options.length < 2) throw new SenderError('need a control plus at least one option');
+  if (a.copies < 1 || a.copies > 50) throw new SenderError('copies must be 1..50');
+  if (a.brain !== 'ai' && a.brain !== 'rules') throw new SenderError('brain must be "ai" or "rules"');
+  if (radiusM < 100 || radiusM > MAX_RADIUS_M) throw new SenderError('radius must be 100 m to 7 miles');
+  if (!isAdmin(ctx)) {
+    // Public demo limits: keep Claude spend small and the shared database responsive.
+    if (a.copies > 10 || a.days > 90) throw new SenderError('Demo limit: up to 10 copies and 90 days.');
+    if ([...ctx.db.experiment.iter()].some(e => e.status === 'running')) {
+      throw new SenderError('Another simulation is running. Try again in a minute.');
     }
-    startExperiment(ctx, baseUniverseId, label, options, copies, days, brain);
-    ensureClock(ctx);
   }
+  startExperiment(ctx, a.baseUniverseId, a.label, options, a.copies, a.days, a.brain, radiusM);
+  ensureClock(ctx);
+}
+
+const experimentArgs = {
+  baseUniverseId: t.u64(),
+  label: t.string(),
+  optionsJson: t.string(),
+  copies: t.u32(),
+  days: t.u32(),
+  brain: t.string(),
+};
+
+/** Original signature (used by the Mana advisor): competitors within the default 1.5 miles. */
+export const start_experiment = spacetimedb.reducer(experimentArgs, (ctx, a) => launchExperiment(ctx, a, DEFAULT_RADIUS_M));
+
+/** Same, with the competitor radius in meters (the app's radius slider), up to 7 miles. */
+export const start_experiment_r = spacetimedb.reducer({ ...experimentArgs, radiusM: t.u32() }, (ctx, a) =>
+  launchExperiment(ctx, a, a.radiusM)
 );
 
 // ---- The clock: every fire advances every ready universe by one day ------------
@@ -319,6 +332,27 @@ export const inspect_menu_crawl = spacetimedb.procedure({ buildId: t.u64() }, t.
   ctx.withTx(tx => tx.db.admin.identity.find(ctx.sender) !== null)
     ? inspectMenuCrawl(ctx, buildId)
     : JSON.stringify({ error: 'admin only' })
+);
+
+/** Scrape every coffee place within 7 miles of a built café (for the radius slider). */
+export const refresh_rivals = spacetimedb.reducer({ buildId: t.u64() }, (ctx, { buildId }) => {
+  requireAdmin(ctx);
+  const b = ctx.db.twinBuild.id.find(buildId);
+  if (!b || !b.placeJson) throw new SenderError(`build ${buildId} has no place yet`);
+  const row = { buildId, status: 'queued', runId: '', detail: 'Queued' };
+  if (ctx.db.rivalScan.buildId.find(buildId)) ctx.db.rivalScan.buildId.update(row);
+  else ctx.db.rivalScan.insert(row);
+  ctx.db.rivalJob.insert({ scheduledId: 0n, scheduledAt: ScheduleAt.time(ctx.timestamp.microsSinceUnixEpoch), buildId });
+});
+
+export const scan_rivals = spacetimedb.procedure(
+  { onSchedule: rivalJob },
+  { job: rivalJob.rowType },
+  t.unit(),
+  (ctx, { job }) => {
+    advanceRivalScan(ctx, job.buildId);
+    return {};
+  }
 );
 
 export const advance_build = spacetimedb.procedure(

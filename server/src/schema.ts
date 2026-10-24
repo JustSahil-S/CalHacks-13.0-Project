@@ -310,6 +310,60 @@ export const profileJob = table(
   }
 );
 
+// ---- Competitors within a radius ------------------------------------------------------
+
+// Every coffee place within 7 miles of a built café (static facts, per build).
+export const rival = table(
+  { name: 'rival', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    buildId: t.u64().index('btree'),
+    key: t.string(),
+    name: t.string(),
+    x: t.f64(), // meters east of the café
+    y: t.f64(), // meters north of the café
+    distanceM: t.u32(),
+    rating: t.f64(),
+    reviewsCount: t.u32(),
+    priceIndex: t.f64(),
+    category: t.string(),
+  }
+);
+
+// Which café build a universe belongs to (twin roots and their experiment copies).
+export const universeBuild = table(
+  { name: 'universe_build', public: true },
+  { universeId: t.u64().primaryKey(), buildId: t.u64() }
+);
+
+// The competitor radius an experiment was run with.
+export const experimentRadius = table(
+  { name: 'experiment_radius', public: true },
+  { experimentId: t.u64().primaryKey(), radiusM: t.u32() }
+);
+
+// Visits each rival received in a universe (for "where did customers go").
+export const rivalTally = table(
+  { name: 'rival_tally', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    universeId: t.u64().index('btree'),
+    rivalKey: t.string(),
+    visits: t.u32(), // simulated customers, not scaled
+  }
+);
+
+// Refreshing an existing build's rivals (scrape coffee places within 7 miles).
+export const rivalScan = table(
+  { name: 'rival_scan', public: true },
+  { buildId: t.u64().primaryKey(), status: t.string(), runId: t.string(), detail: t.string() }
+);
+
+export const rivalJob = table(
+  { name: 'rival_job' },
+  { scheduledId: t.u64().primaryKey().autoInc(), scheduledAt: t.scheduleAt(), buildId: t.u64() }
+);
+
 // Identities allowed to run admin actions (builds, resets, clock). Join with claim_admin + ADMIN_KEY.
 export const admin = table({ name: 'admin', public: true }, { identity: t.identity().primaryKey() });
 
@@ -382,6 +436,12 @@ const spacetimedb = schema(
     areaMap,
     mapJob,
     admin,
+    rival,
+    universeBuild,
+    experimentRadius,
+    rivalTally,
+    rivalScan,
+    rivalJob,
   },
   // Optional so the engine can publish and run on the rules brain without keys.
   {

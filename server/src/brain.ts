@@ -3,6 +3,7 @@
 import { ScheduleAt } from 'spacetimedb';
 import { roll } from './rng';
 import type { Ctx } from './sim';
+import { rivalSet } from './rivals';
 
 export const BATCH_SIZE = 10;
 
@@ -21,11 +22,28 @@ export function situationKey(a: AgentRow, newCents: number, competitorSig: strin
   return `${a.key}|${a.refPriceCents}>${newCents}|m${mood}|${competitorSig}`;
 }
 
-/** The café plus its rival's pricing: part of every situation key. */
+/** The café plus the alternatives in range: part of every situation key. */
 export function competitorSignature(ctx: Ctx, universeId: bigint): string {
   const cafeName = ctx.db.cafe.universeId.find(universeId)?.name ?? '?';
+  const set = rivalSet(ctx, universeId);
+  if (set) return `${cafeName}|${set.signature}`;
   const comp = [...ctx.db.competitor.universeId.filter(universeId)][0];
   return `${cafeName}|${comp ? `${comp.key}:${comp.priceIndex.toFixed(2)}` : 'none'}`;
+}
+
+const miles = (m: number) => `${(m / 1609).toFixed(m < 1609 ? 2 : 1)} mi`;
+const priceWords = (i: number) => (i < 0.95 ? 'cheaper' : i > 1.05 ? 'pricier' : 'similar prices');
+
+/** The alternatives a customer would weigh: the strongest rivals in range, or the single legacy rival. */
+function alternatives(ctx: Ctx, universeId: bigint) {
+  const set = rivalSet(ctx, universeId);
+  if (set) {
+    return set.rivals.length
+      ? set.rivals.slice(0, 5).map(r => ({ name: r.name, distance: miles(r.distanceM), rating: r.rating, prices: priceWords(r.priceIndex) }))
+      : 'no other coffee place within range';
+  }
+  const comp = [...ctx.db.competitor.universeId.filter(universeId)][0];
+  return comp ? [{ name: comp.name, rating: comp.rating, prices: priceWords(comp.priceIndex) }] : 'none known';
 }
 
 interface Noticer {
@@ -51,16 +69,20 @@ export function findNoticers(ctx: Ctx, universeId: bigint, seed: bigint, tick: n
 function customerContext(ctx: Ctx, universeId: bigint, n: Noticer) {
   const menu = new Map<string, string>();
   for (const m of ctx.db.menuItem.universeId.filter(universeId)) menu.set(m.key, m.name);
-  const comp = [...ctx.db.competitor.universeId.filter(universeId)][0];
   const memories = [...ctx.db.memory.universeId.filter(universeId)]
     .filter(m => m.agentKey === n.agent.key)
     .slice(-4)
     .map(m => m.text);
   const a = n.agent;
+  const changePct = a.refPriceCents > 0 ? ((n.newCents - a.refPriceCents) / a.refPriceCents) * 100 : 0;
+  const changeCents = n.newCents - a.refPriceCents;
   return {
     name: a.name,
     type: a.archetype,
     caresAbout: a.cares,
+    priceChange: `${changePct >= 0 ? '+' : ''}${changePct.toFixed(0)}% (${changeCents >= 0 ? '+' : '-'}${dollars(Math.abs(changeCents))} per visit)`,
+    extraPerWeekIfHabitUnchanged: dollars(Math.max(0, changeCents) * a.visitsPerWeek),
+    priceSensitivity: `${a.priceSensitivity.toFixed(2)} (0 = never thinks about price, 1 = very price-conscious)`,
     visitsPerWeek: a.visitsPerWeek,
     shareOfCoffeeTripsHereUntilNow:
       a.pHere + a.pCompetitor > 0 ? +(a.pHere / (a.pHere + a.pCompetitor)).toFixed(2) : 1,
@@ -68,9 +90,7 @@ function customerContext(ctx: Ctx, universeId: bigint, n: Noticer) {
     usualOrderUsedToCost: dollars(a.refPriceCents),
     usualOrderNowCosts: dollars(n.newCents),
     currentMood: `${a.satisfaction.toFixed(1)} out of 5`,
-    nearbyCompetitor: comp
-      ? { name: comp.name, pricesVsThisCafe: comp.priceIndex, rating: comp.rating }
-      : null,
+    otherCoffeePlacesNearby: alternatives(ctx, universeId),
     memories,
   };
 }
@@ -149,11 +169,15 @@ export function buildPrompt(customers: { id: string; context: unknown }[]): stri
     'Each customer below just walked in and saw that their usual order now costs a different amount.',
     'For each one, judge realistically how this person would behave on a typical day over the next two weeks.',
     'Think about their habits, how much they care about price versus other things, their memories,',
-    'and the nearby competitor. Base each answer on this specific person, not on a general rule.',
+    'and the other coffee places nearby (otherCoffeePlacesNearby). Base each answer on this specific person, not on a general rule.',
+    'Weigh the size of the change (priceChange, extraPerWeekIfHabitUnchanged) against their priceSensitivity.',
+    'A small bump of a few percent goes mostly unnoticed. A large jump on something they buy several times',
+    'a week adds up, and price-conscious people respond by switching to the competitor or coming less often,',
+    'even if they like the place; loyal people who care about other things may grumble and stay.',
     '',
     'For each customer return:',
     '- share_here: of the coffee trips they make in the next two weeks, the fraction (0 to 1) that',
-    '  will be to this café rather than the competitor. Start from shareOfCoffeeTripsHereUntilNow and',
+    '  will be to this café rather than one of the other places. Start from shareOfCoffeeTripsHereUntilNow and',
     '  change it only as much as this person would really change their behavior.',
     '- frequency_multiplier: how often they will buy coffee out compared with their usual habit',
     '  (1.0 = same as usual, 0.8 = a bit less, 0.5 = half as often, never above 1.2).',
