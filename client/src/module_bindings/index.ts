@@ -91,6 +91,7 @@ import PartnerRow from "./partner_table";
 import ReviewRow from "./review_table";
 import RivalRow from "./rival_table";
 import RivalInfoRow from "./rival_info_table";
+import RivalMenuItemRow from "./rival_menu_item_table";
 import RivalPriceRow from "./rival_price_table";
 import RivalScanRow from "./rival_scan_table";
 import RivalTallyRow from "./rival_tally_table";
@@ -388,6 +389,20 @@ const tablesSchema = __schema({
       { name: 'rival_info_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, RivalInfoRow),
+  rivalMenuItem: __table({
+    name: 'rival_menu_item',
+    indexes: [
+      { accessor: 'buildId', name: 'rival_menu_item_build_id_idx_btree', algorithm: 'btree', columns: [
+        'buildId',
+      ] },
+      { accessor: 'id', name: 'rival_menu_item_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'rival_menu_item_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, RivalMenuItemRow),
   rivalPrice: __table({
     name: 'rival_price',
     indexes: [

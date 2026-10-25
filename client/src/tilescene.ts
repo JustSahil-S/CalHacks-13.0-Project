@@ -89,6 +89,8 @@ type Feature = GeoJSON.Feature<GeoJSON.Point, { c: string; i: number }>;
 export class TileScene {
   onFrame: (dt: number) => void = () => {};
   onPick: (index: number | null) => void = () => {};
+  /** A competitor's pin was clicked (its rival key). */
+  onRivalPick: (key: string) => void = () => {};
   private map: maplibregl.Map;
   private ready: Promise<void>;
   private alive = true;
@@ -378,8 +380,15 @@ export class TileScene {
     for (const r of strongest) {
       const miles = r.distanceM / 1609;
       const note = miles < 1 ? `${miles.toFixed(2)} mi` : `${miles.toFixed(1)} mi`;
+      const el = pin('rival', r.name, note);
+      el.classList.add('pickable');
+      el.title = `See ${r.name}'s menu`;
+      el.addEventListener('click', e => {
+        e.stopPropagation();
+        this.onRivalPick(r.key);
+      });
       this.rivalMarkers.push(
-        new maplibregl.Marker({ element: pin('rival', r.name, note), anchor: 'bottom', offset: [0, -24] })
+        new maplibregl.Marker({ element: el, anchor: 'bottom', offset: [0, -24] })
           .setLngLat(this.ll(r.x, r.y))
           .addTo(this.map)
       );

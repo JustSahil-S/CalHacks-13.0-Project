@@ -11,6 +11,34 @@ import type { Ctx } from './sim';
 const CHAINS = /starbucks|peet'?s|philz|dunkin|mcdonald|mccaf|tim hortons|blue bottle|coffee bean|caribou|dutch bros|panera|7-eleven|krispy kreme|boba guys|tastea|sharetea|gong cha|kung fu tea|teaspoon|quickly/i;
 export const isChain = (name: string) => CHAINS.test(name);
 
+/** Keep a nearby place's full menu (replacing what was stored for it) so the app can show it. */
+export function saveRivalMenu(
+  tx: any,
+  buildId: bigint,
+  rivalKey: string,
+  items: { name: string; section?: string; cents: number }[],
+  source: string,
+  sourceUrl: string
+) {
+  for (const row of [...tx.db.rivalMenuItem.buildId.filter(buildId)]) if (row.rivalKey === rivalKey) tx.db.rivalMenuItem.id.delete(row.id);
+  const seen = new Set<string>();
+  for (const it of items.slice(0, 400)) {
+    const key = `${it.name}|${it.cents}`;
+    if (!it.name || !(it.cents > 0) || seen.has(key)) continue;
+    seen.add(key);
+    tx.db.rivalMenuItem.insert({
+      id: 0n,
+      buildId,
+      rivalKey,
+      name: it.name.slice(0, 80),
+      section: (it.section ?? '').slice(0, 60),
+      priceCents: Math.round(it.cents),
+      source,
+      sourceUrl: sourceUrl.slice(0, 500),
+    });
+  }
+}
+
 /** Fill rival_info (address, website, menu link) from the stored Google Maps results. */
 export function syncRivalInfo(tx: Ctx, buildId: bigint) {
   const b = tx.db.twinBuild.id.find(buildId);
@@ -155,7 +183,7 @@ export function setRivalMenu(
   ctx: ProcCtx,
   buildId: bigint,
   rivalKey: string,
-  items: { name: string; price: number }[],
+  items: { name: string; price: number; section?: string }[],
   sourceUrl: string,
   source: 'menu' | 'delivery' = 'menu'
 ): string {
@@ -171,7 +199,7 @@ export function setRivalMenu(
   const theirs = items
     .filter(i => i && typeof i.name === 'string' && Number(i.price) > 0)
     .slice(0, 400)
-    .map(i => ({ name: i.name.slice(0, 80), cents: Math.round(Number(i.price) * 100) }));
+    .map(i => ({ name: i.name.slice(0, 80), cents: Math.round(Number(i.price) * 100), section: String(i.section ?? '') }));
   if (theirs.length < 3) return 'error: need at least 3 priced items';
   const prompt = [
     `Below is our café menu (keys, names, our prices in cents) and the real menu of ${got.rival}, a nearby coffee place.`,
@@ -206,12 +234,13 @@ export function setRivalMenu(
     const cents = priceOf(m);
     if (key && cents && !rows.has(key)) rows.set(key, cents);
   }
-  if (rows.size) {
-    ctx.withTx(tx => {
-      for (const row of [...tx.db.rivalPrice.buildId.filter(buildId)]) if (row.rivalKey === rivalKey) tx.db.rivalPrice.id.delete(row.id);
-      for (const [itemKey, priceCents] of rows) tx.db.rivalPrice.insert({ id: 0n, buildId, rivalKey, itemKey, priceCents, source });
-    });
-  }
+  ctx.withTx(tx => {
+    // Their whole menu, for the app (even if none of it matches ours).
+    saveRivalMenu(tx, buildId, rivalKey, theirs, source, sourceUrl);
+    if (!rows.size) return;
+    for (const row of [...tx.db.rivalPrice.buildId.filter(buildId)]) if (row.rivalKey === rivalKey) tx.db.rivalPrice.id.delete(row.id);
+    for (const [itemKey, priceCents] of rows) tx.db.rivalPrice.insert({ id: 0n, buildId, rivalKey, itemKey, priceCents, source });
+  });
   const n = rows.size;
   console.info(`real menu for ${got.rival} (build ${buildId}) from ${sourceUrl}: ${theirs.length} items sent, Claude matched ${raw.length}, kept ${n}`);
   return n
@@ -223,6 +252,15 @@ const PHOTO_SCHEMA = {
   type: 'object',
   properties: {
     menuPhotos: { type: 'integer' },
+    menuItems: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { name: { type: 'string' }, cents: { type: 'integer' } },
+        required: ['name', 'cents'],
+        additionalProperties: false,
+      },
+    },
     matches: {
       type: 'array',
       items: {
@@ -233,7 +271,7 @@ const PHOTO_SCHEMA = {
       },
     },
   },
-  required: ['menuPhotos', 'matches'],
+  required: ['menuPhotos', 'menuItems', 'matches'],
   additionalProperties: false,
 };
 
@@ -266,12 +304,13 @@ export function readRivalPhotos(ctx: ProcCtx, buildId: bigint, rivalKey: string,
         'drinks, people or the room. From the menu photos only, find the closest equivalent of each of OUR items',
         '(regular size) and give its price in cents exactly as shown, plus the text you read in "seen". Skip our',
         'items whose price is not clearly visible. Never guess a price. Set menuPhotos to how many photos show a menu.',
+        'Also list in menuItems every item with a clearly legible price on those menu photos (up to 80), name as written.',
         '',
         JSON.stringify({ ours: got.menu }),
       ].join('\n'),
     },
   ];
-  const res = callClaude(ctx, content, PHOTO_SCHEMA, 4000);
+  const res = callClaude(ctx, content, PHOTO_SCHEMA, 8000);
   if (!res.ok) return `error: Claude failed: ${res.error.slice(0, 200)}`;
   const ours = new Map(got.menu.map(m => [m.key, m.cents]));
   const rows = new Map<string, number>();
@@ -281,12 +320,15 @@ export function readRivalPhotos(ctx: ProcCtx, buildId: bigint, rivalKey: string,
     // Keep plausible prices only (a misread digit shouldn't make a latte $45).
     if (our && Number.isFinite(c) && c >= Math.max(50, our / 4) && c <= our * 4 && !rows.has(m.ours)) rows.set(m.ours, c);
   }
-  if (rows.size) {
-    ctx.withTx(tx => {
-      for (const row of [...tx.db.rivalPrice.buildId.filter(buildId)]) if (row.rivalKey === rivalKey) tx.db.rivalPrice.id.delete(row.id);
-      for (const [itemKey, priceCents] of rows) tx.db.rivalPrice.insert({ id: 0n, buildId, rivalKey, itemKey, priceCents, source: 'photo' });
-    });
-  }
+  const legible = (res.data.menuItems ?? [])
+    .map((m: any) => ({ name: String(m.name ?? ''), cents: Math.round(Number(m.cents)) }))
+    .filter((m: any) => m.name && m.cents >= 50 && m.cents <= 10000);
+  ctx.withTx(tx => {
+    if (legible.length >= 3) saveRivalMenu(tx, buildId, rivalKey, legible, 'photo', urls[0] ?? '');
+    if (!rows.size) return;
+    for (const row of [...tx.db.rivalPrice.buildId.filter(buildId)]) if (row.rivalKey === rivalKey) tx.db.rivalPrice.id.delete(row.id);
+    for (const [itemKey, priceCents] of rows) tx.db.rivalPrice.insert({ id: 0n, buildId, rivalKey, itemKey, priceCents, source: 'photo' });
+  });
   console.info(`menu photos for ${got.rival} (build ${buildId}): ${urls.length} photos, ${res.data.menuPhotos} show a menu, ${rows.size} of our items priced`);
   return rows.size
     ? `ok: ${rows.size} of our items priced from ${res.data.menuPhotos} menu photos`

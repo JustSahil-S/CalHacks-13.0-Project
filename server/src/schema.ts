@@ -511,6 +511,22 @@ export const rivalPrice = table(
   }
 );
 
+// A nearby place's full menu, as read (delivery app with prices already cut for the markup, menu
+// photos, or an in-store read), so the app can show it when you click that place.
+export const rivalMenuItem = table(
+  { name: 'rival_menu_item', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    buildId: t.u64().index('btree'),
+    rivalKey: t.string(),
+    name: t.string(),
+    section: t.string(),
+    priceCents: t.u32(),
+    source: t.string(), // "delivery" | "photo" | "menu"
+    sourceUrl: t.string(),
+  }
+);
+
 // Where to find each nearby place online (for Mana's browser to read its real menu).
 export const rivalInfo = table(
   { name: 'rival_info', public: true },
@@ -564,6 +580,7 @@ const spacetimedb = schema(
     rivalPrice,
     rivalPriceJob,
     rivalInfo,
+    rivalMenuItem,
     deliveryScan,
     deliveryJob,
     universe,

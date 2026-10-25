@@ -56,6 +56,24 @@ export interface Fork {
    * look online and whether their real menu has already been read. Loads lazily like marketPrices.
    */
   menuReadTargets(buildId: bigint, limit?: number, radiusM?: number): { key: string; name: string; distanceM: number; address: string; website: string; menuUrl: string; mapsUrl: string; read: boolean }[];
+  /**
+   * A competitor's menu, for showing when someone clicks it (map pin or competitor list). source
+   * says where it came from: 'delivery' (DoorDash / Uber Eats, prices already cut 15% for the
+   * delivery markup), 'photo' (read off menu photos on Google Maps), 'menu' (read in-store) or
+   * 'estimated' (no menu found: Claude's estimates for our items only). items is their full menu
+   * (for 'estimated': our items at their estimated price); vsOurs pairs their price with ours for
+   * every item of ours they have. Loads lazily: may be empty on the first call, then onChange fires.
+   */
+  rivalMenu(buildId: bigint, rivalKey: string): {
+    key: string;
+    name: string;
+    distanceM: number;
+    rating: number;
+    source: 'menu' | 'delivery' | 'photo' | 'estimated';
+    sourceUrl: string;
+    items: { name: string; section: string; cents: number }[];
+    vsOurs: { ourKey: string; ourName: string; ourCents: number; theirCents: number; source: string }[];
+  } | null;
   /** Hand a nearby place's real menu (items [{ name, price }] in dollars) to the engine. Needs the menu-reader (partner) identity. Resolves "ok: ..." or "error: ...". */
   setRivalMenu(buildId: bigint, rivalKey: string, items: { name: string; price: number }[], sourceUrl: string): Promise<string>;
   experiments(rootUniverseId: bigint): { id: bigint; label: string; status: string; copies: number; days: number; radiusM: number; kind: 'single' | 'sweep' }[];
@@ -359,6 +377,32 @@ function makeFork(conn: DbConnection, identity: string, httpHost: string, dbName
       }
       return out;
     },
+    rivalMenu(buildId, rivalKey) {
+      lazy(`rmenu:${buildId}`, [`SELECT * FROM rival_menu_item WHERE build_id = ${buildId}`, `SELECT * FROM rival_price WHERE build_id = ${buildId}`]);
+      const r = [...conn.db.rival.iter()].find(x => x.buildId === buildId && x.key === rivalKey);
+      if (!r) return null;
+      const root = fork.cafes().find(c => c.buildId === buildId)?.universeId;
+      const ours = new Map(root === undefined ? [] : fork.menu(root).map(m => [m.key, m]));
+      const rows = [...conn.db.rivalMenuItem.iter()].filter(m => m.buildId === buildId && m.rivalKey === rivalKey);
+      const prices = [...conn.db.rivalPrice.iter()].filter(p => p.buildId === buildId && p.rivalKey === rivalKey);
+      const vsOurs = prices
+        .filter(p => ours.has(p.itemKey))
+        .map(p => ({ ourKey: p.itemKey, ourName: ours.get(p.itemKey)!.name, ourCents: ours.get(p.itemKey)!.priceCents, theirCents: p.priceCents, source: p.source }));
+      const real = rows.length > 0;
+      const src = (real ? rows[0].source : prices[0]?.source ?? 'estimated') as string;
+      return {
+        key: r.key,
+        name: r.name,
+        distanceM: r.distanceM,
+        rating: r.rating,
+        source: src === 'menu' || src === 'delivery' || src === 'photo' ? src : 'estimated',
+        sourceUrl: real ? rows[0].sourceUrl : '',
+        items: real
+          ? rows.map(m => ({ name: m.name, section: m.section, cents: m.priceCents }))
+          : vsOurs.map(v => ({ name: v.ourName, section: '', cents: v.theirCents })),
+        vsOurs,
+      };
+    },
     menuReadTargets(buildId, limit = 5, radiusM = DEFAULT_RADIUS_M) {
       lazy(`rinfo:${buildId}`, [`SELECT * FROM rival_info WHERE build_id = ${buildId}`, `SELECT * FROM rival_price WHERE build_id = ${buildId}`]);
       const info = new Map([...conn.db.rivalInfo.iter()].filter(i => i.buildId === buildId).map(i => [i.rivalKey, i]));
@@ -647,11 +691,16 @@ export class ForkMap {
   radiusM = DEFAULT_RADIUS_M;
   onDay: (info: DayInfo) => void = () => {};
   onPick: (customer: CustomerInfo | null) => void = () => {};
+  /** A competitor's pin was clicked: show its menu with fork.rivalMenu(buildId, key). */
+  onRivalPick: (rival: { key: string; buildId: bigint }) => void = () => {};
 
   constructor(container: HTMLElement, private fork: Fork) {
     injectPinStyles();
     this.scene = new TileScene(container);
     this.scene.onFrame = dt => this.tick(dt);
+    this.scene.onRivalPick = key => {
+      if (this.buildId !== null) this.onRivalPick({ key, buildId: this.buildId });
+    };
     this.scene.onPick = i => {
       this.selected = i;
       this.onPick(i === null ? null : this.customer(i));
@@ -810,6 +859,6 @@ function injectPinStyles() {
   s.id = 'fork-sdk-styles';
   s.textContent = `
 .fork-pin{position:absolute;pointer-events:none;transform:translate(-50%,-100%);font:600 11px ui-monospace,'IBM Plex Mono',monospace;letter-spacing:.06em;text-transform:uppercase;padding:4px 8px;border-radius:4px;color:#fff;white-space:nowrap;z-index:3}
-.fork-pin.cafe{background:#d9472b}.fork-pin.rival{background:#1f6f6b}.fork-pin span{opacity:.8;font-weight:400;margin-left:6px}`;
+.fork-pin.cafe{background:#d9472b}.fork-pin.rival{background:#1f6f6b}.fork-pin.pickable{pointer-events:auto;cursor:pointer}.fork-pin.pickable:hover{filter:brightness(1.15)}.fork-pin span{opacity:.8;font-weight:400;margin-left:6px}`;
   document.head.appendChild(s);
 }

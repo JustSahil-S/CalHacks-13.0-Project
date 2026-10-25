@@ -361,6 +361,18 @@ export const RivalJob = __t.object("RivalJob", {
 });
 export type RivalJob = __Infer<typeof RivalJob>;
 
+export const RivalMenuItem = __t.object("RivalMenuItem", {
+  id: __t.u64(),
+  buildId: __t.u64(),
+  rivalKey: __t.string(),
+  name: __t.string(),
+  section: __t.string(),
+  priceCents: __t.u32(),
+  source: __t.string(),
+  sourceUrl: __t.string(),
+});
+export type RivalMenuItem = __Infer<typeof RivalMenuItem>;
+
 export const RivalPrice = __t.object("RivalPrice", {
   id: __t.u64(),
   buildId: __t.u64(),

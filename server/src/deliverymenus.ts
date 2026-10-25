@@ -46,7 +46,7 @@ const sameSpot = (t: Target, lat: unknown, lng: unknown) => {
 };
 interface State {
   targets: Target[];
-  menus: { key: string; url: string; items: { name: string; price: number }[] }[]; // waiting to be matched
+  menus: { key: string; url: string; items: { name: string; price: number; section?: string }[] }[]; // waiting to be matched
   photos?: { key: string; urls: string[] }[]; // waiting to be read
   matched: string[]; // "name: result"
 }
@@ -130,6 +130,7 @@ export function advanceDeliveryScan(ctx: ProcCtx, buildId: bigint) {
       // A fresh scan replaces the last one's delivery prices (a store page may have been the wrong place).
       ctx.withTx(tx => {
         for (const r of [...tx.db.rivalPrice.buildId.filter(buildId)]) if (r.source === 'delivery') tx.db.rivalPrice.id.delete(r.id);
+        for (const r of [...tx.db.rivalMenuItem.buildId.filter(buildId)]) if (r.source !== 'menu') tx.db.rivalMenuItem.id.delete(r.id);
       });
       state.targets = got.rivals;
       const queries = got.rivals.flatMap(r => [`${r.name} ${got.city} doordash`, `${r.name} ${got.city} ubereats`]).join('\n');
@@ -175,8 +176,8 @@ export function advanceDeliveryScan(ctx: ProcCtx, buildId: bigint) {
       const dd = scan.ddRunId ? runStatus(ctx, token, scan.ddRunId) : null;
       const ue = scan.ueRunId ? runStatus(ctx, token, scan.ueRunId) : null;
       if ((dd && stillRunning(dd.status)) || (ue && stillRunning(ue.status))) return later(15);
-      const byPlace = new Map<string, { url: string; items: { name: string; price: number }[] }>();
-      const add = (key: string, url: string, items: { name: string; price: number }[]) => {
+      const byPlace = new Map<string, { url: string; items: { name: string; price: number; section?: string }[] }>();
+      const add = (key: string, url: string, items: { name: string; price: number; section?: string }[]) => {
         // Prefer whichever app lists more of the place's menu.
         if (items.length >= 3 && (!byPlace.has(key) || byPlace.get(key)!.items.length < items.length)) byPlace.set(key, { url, items });
       };
@@ -187,10 +188,10 @@ export function advanceDeliveryScan(ctx: ProcCtx, buildId: bigint) {
           const store = stores.find(st => typeof st.url === 'string' && ddKey(st.url) === id);
           if (!store || !sameSpot(t, store.latitude, store.longitude)) continue;
           const items = (store.menu ?? [])
-            .flatMap((sec: any) => sec?.items ?? [])
-            .map((m: any) => ({ name: String(m?.name ?? ''), dollars: Number(m?.price) }))
+            .flatMap((sec: any) => (sec?.items ?? []).map((m: any) => ({ ...m, section: sec?.section })))
+            .map((m: any) => ({ name: String(m?.name ?? ''), dollars: Number(m?.price), section: String(m?.section ?? '') }))
             .filter((m: any) => m.name && m.dollars > 0)
-            .map((m: any) => ({ name: m.name, price: Math.round(m.dollars * DELIVERY_MARKDOWN * 100) / 100 }));
+            .map((m: any) => ({ name: m.name, section: m.section, price: Math.round(m.dollars * DELIVERY_MARKDOWN * 100) / 100 }));
           add(t.key, t.dd!, items);
         }
       }
@@ -201,9 +202,9 @@ export function advanceDeliveryScan(ctx: ProcCtx, buildId: bigint) {
           const store = stores.find(s => [s.url, s.originalUrl, s.restaurantUrl, s.canonicalUrl].some(u => typeof u === 'string' && ueKey(u) === id));
           if (!store || !sameSpot(t, store.latitude, store.longitude)) continue;
           const items = (store?.menuItems ?? [])
-            .map((m: any) => ({ name: String(m.name ?? ''), dollars: Number(m.price) }))
+            .map((m: any) => ({ name: String(m.name ?? ''), dollars: Number(m.price), section: String(m.section ?? '') }))
             .filter((m: any) => m.name && m.dollars > 0)
-            .map((m: any) => ({ name: m.name, price: Math.round(m.dollars * DELIVERY_MARKDOWN * 100) / 100 }));
+            .map((m: any) => ({ name: m.name, section: m.section, price: Math.round(m.dollars * DELIVERY_MARKDOWN * 100) / 100 }));
           add(t.key, t.ue!, items);
         }
       }
