@@ -158,6 +158,8 @@ function launchExperiment(
     if (a.copies > 10 || a.days > 90) throw new SenderError('Demo limit: up to 10 copies and 90 days.');
     // A price search runs several prices at once: keep it to 7 prices plus no change, 80 futures.
     if (options.length > 8 || options.length * a.copies > 80) throw new SenderError('Demo limit: up to 7 prices and 80 futures per run.');
+    // Claude reads every customer who notices, separately for each price: keep those runs to 2 prices.
+    if (usesClaude(a.brain) && options.length > 3) throw new SenderError('Demo limit: a Claude run tests up to 2 prices. Use Find my best price to try more.');
     if ([...ctx.db.experiment.iter()].some(e => e.status === 'running')) {
       throw new SenderError('Another simulation is running. Try again in a minute.');
     }

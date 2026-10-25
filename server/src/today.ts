@@ -87,9 +87,11 @@ export function prepareDay(ctx: Ctx, universeId: bigint, tick: number): Today | 
       return s;
     },
     input(a, state, day = tick) {
-      // The largest rise on an item of their usual order, once they've seen the new prices.
+      const st = state ?? today.stateOf(a);
+      // The largest rise on an item of their usual order, once they've been in since the prices
+      // changed (a visit, not their bill changing: a rise offset by a cut elsewhere still counts).
       let overCeiling = 0;
-      if (a.refPriceCents !== orderPrice(basePrices, a.usualOrder)) {
+      if (st.lastHereTick > start) {
         let maxRise = 0;
         for (const k of JSON.parse(a.usualOrder) as string[]) {
           const before = basePrices.get(k) ?? 0;
@@ -109,7 +111,7 @@ export function prepareDay(ctx: Ctx, universeId: bigint, tick: number): Today | 
         places: knownPlaces(a.key, all, placesSig)
           .map(k => byKey.get(k))
           .filter((p): p is Place => !!p),
-        state: state ?? today.stateOf(a),
+        state: st,
       };
     },
   };
