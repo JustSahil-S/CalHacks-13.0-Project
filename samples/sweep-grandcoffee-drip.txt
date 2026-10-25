@@ -1,0 +1,12 @@
+Sweep · Drip Coffee · cli 44554: 7 prices x 8 futures x 60 days = 56 worlds in 20.8s
+
+price     profit/mo vs now    range (worst..best)    wins   visits   price in reviews
+$3.00           -$827           -$918..-$672     0/8     1.0%   0%
+$3.45       (current)                              -            0%
+$3.75           +$267           +$192..+$351     8/8    -1.4%   0%
+$4.25           +$576           +$300..+$715     8/8    -3.7%   6%   <- best
+$4.50           +$550           +$280..+$817     8/8    -5.2%   7%
+$5.00           +$472           -$135..+$711     7/8    -7.8%   10%
+$5.50          -$2032         -$2455..-$1288     0/8   -14.9%   8%
+
+experiment 65
