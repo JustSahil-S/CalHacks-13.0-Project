@@ -61,6 +61,7 @@ import SyncCardsReducer from "./sync_cards_reducer";
 import SyncRivalInfoReducer from "./sync_rival_info_reducer";
 
 // Import all procedure arg schemas
+import * as InspectDeliveryProcedure from "./inspect_delivery_procedure";
 import * as InspectMenuCrawlProcedure from "./inspect_menu_crawl_procedure";
 import * as InspectMenuSearchProcedure from "./inspect_menu_search_procedure";
 import * as SetRivalMenuProcedure from "./set_rival_menu_procedure";
@@ -531,6 +532,7 @@ const reducersSchema = __reducers(
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */
 const proceduresSchema = __procedures(
+  __procedureSchema("inspect_delivery", InspectDeliveryProcedure.params, InspectDeliveryProcedure.returnType),
   __procedureSchema("inspect_menu_crawl", InspectMenuCrawlProcedure.params, InspectMenuCrawlProcedure.returnType),
   __procedureSchema("inspect_menu_search", InspectMenuSearchProcedure.params, InspectMenuSearchProcedure.returnType),
   __procedureSchema("set_rival_menu", SetRivalMenuProcedure.params, SetRivalMenuProcedure.returnType),

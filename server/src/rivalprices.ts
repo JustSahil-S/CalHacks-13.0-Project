@@ -218,3 +218,77 @@ export function setRivalMenu(
     ? `ok: ${n} of our items matched on ${got.rival}'s menu`
     : `error: none of our items matched ${got.rival}'s menu (${theirs.length} items received, ${raw.length} matches proposed)`;
 }
+
+const PHOTO_SCHEMA = {
+  type: 'object',
+  properties: {
+    menuPhotos: { type: 'integer' },
+    matches: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { ours: { type: 'string' }, cents: { type: 'integer' }, seen: { type: 'string' } },
+        required: ['ours', 'cents', 'seen'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['menuPhotos', 'matches'],
+  additionalProperties: false,
+};
+
+/**
+ * Last resort before estimating: a nearby place's Google Maps photos. Claude finds the ones that show
+ * a menu (board, printed menu, price list) and reads the prices of the closest equivalents of our
+ * items. Stored as source "photo". Only prices actually visible in a photo are kept.
+ */
+export function readRivalPhotos(ctx: ProcCtx, buildId: bigint, rivalKey: string, imageUrls: string[]): string {
+  const got = ctx.withTx(tx => {
+    const b = tx.db.twinBuild.id.find(buildId);
+    if (!b || b.universeId === 0n) return null;
+    const rival = [...tx.db.rival.buildId.filter(buildId)].find(r => r.key === rivalKey);
+    if (!rival) return null;
+    const menu = [...tx.db.menuItem.universeId.filter(b.universeId)].map(m => ({ key: m.key, name: m.name, cents: m.priceCents }));
+    return { rival: rival.name, menu };
+  });
+  if (!got) return `error: no café ${buildId} with a nearby place ${rivalKey}`;
+  // Google serves thumbnails (".../photo=w408-h306-k-no"); ask for a size where menu text is legible.
+  const big = (u: string) => (/googleusercontent\.com/.test(u) ? u.replace(/=[swh]\d+[^/?#]*$/, '') + '=s1500' : u); // longest side 1500 px (Claude allows 2000 with many images)
+  const urls = imageUrls.filter(u => /^https?:\/\//.test(u)).slice(0, 25).map(big);
+  if (!urls.length) return 'error: no photos';
+  const content: object[] = [
+    ...urls.map(url => ({ type: 'image', source: { type: 'url', url } })),
+    {
+      type: 'text',
+      text: [
+        `These are customer and owner photos of ${got.rival}, a coffee place, from Google Maps.`,
+        'Some may show its menu: a menu board, a printed menu, a price list or price tags. Ignore photos of food,',
+        'drinks, people or the room. From the menu photos only, find the closest equivalent of each of OUR items',
+        '(regular size) and give its price in cents exactly as shown, plus the text you read in "seen". Skip our',
+        'items whose price is not clearly visible. Never guess a price. Set menuPhotos to how many photos show a menu.',
+        '',
+        JSON.stringify({ ours: got.menu }),
+      ].join('\n'),
+    },
+  ];
+  const res = callClaude(ctx, content, PHOTO_SCHEMA, 4000);
+  if (!res.ok) return `error: Claude failed: ${res.error.slice(0, 200)}`;
+  const ours = new Map(got.menu.map(m => [m.key, m.cents]));
+  const rows = new Map<string, number>();
+  for (const m of res.data.matches ?? []) {
+    const c = Math.round(Number(m.cents));
+    const our = ours.get(m.ours);
+    // Keep plausible prices only (a misread digit shouldn't make a latte $45).
+    if (our && Number.isFinite(c) && c >= Math.max(50, our / 4) && c <= our * 4 && !rows.has(m.ours)) rows.set(m.ours, c);
+  }
+  if (rows.size) {
+    ctx.withTx(tx => {
+      for (const row of [...tx.db.rivalPrice.buildId.filter(buildId)]) if (row.rivalKey === rivalKey) tx.db.rivalPrice.id.delete(row.id);
+      for (const [itemKey, priceCents] of rows) tx.db.rivalPrice.insert({ id: 0n, buildId, rivalKey, itemKey, priceCents, source: 'photo' });
+    });
+  }
+  console.info(`menu photos for ${got.rival} (build ${buildId}): ${urls.length} photos, ${res.data.menuPhotos} show a menu, ${rows.size} of our items priced`);
+  return rows.size
+    ? `ok: ${rows.size} of our items priced from ${res.data.menuPhotos} menu photos`
+    : `error: no readable prices in ${urls.length} photos (${res.data.menuPhotos} looked like a menu)`;
+}

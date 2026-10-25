@@ -3,7 +3,7 @@
 import { t, SenderError } from 'spacetimedb/server';
 import { ScheduleAt } from 'spacetimedb';
 import spacetimedb, { buildJob, clockJob, decisionJob, deliveryJob, mapJob, profileJob, rivalJob, rivalPriceJob } from './schema';
-import { advanceDeliveryScan, queueDeliveryScan } from './deliverymenus';
+import { advanceDeliveryScan, inspectDelivery, queueDeliveryScan } from './deliverymenus';
 import { priceRivals, setRivalMenu, syncRivalInfo } from './rivalprices';
 import { fetchAreaMap } from './areamap';
 import { syncCard } from './cards';
@@ -549,6 +549,10 @@ export const delivery_scan_run = spacetimedb.procedure(
     advanceDeliveryScan(ctx, job.buildId);
     return {};
   }
+);
+
+export const inspect_delivery = spacetimedb.procedure({ buildId: t.u64() }, t.string(), (ctx, { buildId }) =>
+  ctx.withTx(tx => tx.db.admin.identity.find(ctx.sender) !== null) ? inspectDelivery(ctx, buildId) : JSON.stringify({ error: 'admin only' })
 );
 
 /** Fill rival_info (addresses, websites) for a café without re-pricing. */

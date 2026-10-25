@@ -44,11 +44,12 @@ export interface Fork {
   /**
    * What nearby coffee places charge for this café's items, by our item key. Each price's source:
    * 'menu' (their real menu, read in-store by Mana's browser), 'delivery' (their DoorDash / Uber Eats
-   * menu, cut 15% for the delivery markup) or 'estimated' (Claude, from chain prices, price level and
+   * menu, cut 15% for the delivery markup), 'photo' (read by Claude off menu photos on Google Maps)
+   * or 'estimated' (Claude, from chain prices, price level and
    * city). readShare = share of places priced from a real menu. avgCents = plain average.
    * Customers compare a rise against this. Loads lazily: empty on the first call, then onChange fires.
    */
-  marketPrices(buildId: bigint): Map<string, { avgCents: number; readShare: number; places: { key: string; name: string; distanceM: number; cents: number; source: 'menu' | 'delivery' | 'estimated' }[] }>;
+  marketPrices(buildId: bigint): Map<string, { avgCents: number; readShare: number; places: { key: string; name: string; distanceM: number; cents: number; source: 'menu' | 'delivery' | 'photo' | 'estimated' }[] }>;
   /**
    * The nearby places worth reading real menus from (Mana's browser): the `limit` nearest
    * independents within `radiusM` (chains are skipped: their prices are well known), with where to
@@ -337,7 +338,7 @@ function makeFork(conn: DbConnection, identity: string, httpHost: string, dbName
     marketPrices(buildId) {
       lazy(`rprice:${buildId}`, [`SELECT * FROM rival_price WHERE build_id = ${buildId}`]);
       const rv = new Map([...conn.db.rival.iter()].filter(r => r.buildId === buildId).map(r => [r.key, r]));
-      type Place = { key: string; name: string; distanceM: number; cents: number; source: 'menu' | 'delivery' | 'estimated' };
+      type Place = { key: string; name: string; distanceM: number; cents: number; source: 'menu' | 'delivery' | 'photo' | 'estimated' };
       const out = new Map<string, { avgCents: number; readShare: number; places: Place[] }>();
       for (const p of conn.db.rivalPrice.iter()) {
         if (p.buildId !== buildId) continue;
@@ -348,7 +349,7 @@ function makeFork(conn: DbConnection, identity: string, httpHost: string, dbName
           name: r?.name ?? p.rivalKey,
           distanceM: r?.distanceM ?? 0,
           cents: p.priceCents,
-          source: p.source === 'menu' || p.source === 'delivery' ? p.source : 'estimated',
+          source: p.source === 'menu' || p.source === 'delivery' || p.source === 'photo' ? p.source : 'estimated',
         });
       }
       for (const v of out.values()) {

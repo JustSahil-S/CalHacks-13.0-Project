@@ -6,11 +6,14 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all procedure arg schemas
+import * as InspectDeliveryProcedure from "../inspect_delivery_procedure";
 import * as InspectMenuCrawlProcedure from "../inspect_menu_crawl_procedure";
 import * as InspectMenuSearchProcedure from "../inspect_menu_search_procedure";
 import * as SetRivalMenuProcedure from "../set_rival_menu_procedure";
 import * as TestMenuReadProcedure from "../test_menu_read_procedure";
 
+export type InspectDeliveryArgs = __Infer<typeof InspectDeliveryProcedure.params>;
+export type InspectDeliveryResult = __Infer<typeof InspectDeliveryProcedure.returnType>;
 export type InspectMenuCrawlArgs = __Infer<typeof InspectMenuCrawlProcedure.params>;
 export type InspectMenuCrawlResult = __Infer<typeof InspectMenuCrawlProcedure.returnType>;
 export type InspectMenuSearchArgs = __Infer<typeof InspectMenuSearchProcedure.params>;
