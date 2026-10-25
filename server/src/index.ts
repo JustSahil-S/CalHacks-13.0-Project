@@ -276,8 +276,12 @@ const normQuery = (q: string) => q.toLowerCase().replace(/[^a-z0-9]+/g, ' ').tri
 
 /** Public: build a twin of a café from a Google Maps link or "name, address, city". */
 export const add_cafe = spacetimedb.reducer({ query: t.string() }, (ctx, { query }) => {
-  const q = query.trim();
-  if (q.length < 3 || q.length > 300) throw new SenderError('Paste a Google Maps link or the café name, street and city.');
+  // Google Maps links carry tracking after "?" (entry=, g_ep=): drop it. Links from a Maps search
+  // are still long (400+ characters), so allow up to 2000.
+  let q = query.trim();
+  if (/^https?:\/\/(www\.)?google\.[a-z.]+\/maps\//i.test(q)) q = q.split('?')[0];
+  if (q.length < 3) throw new SenderError('Paste a Google Maps link or the café name, street and city.');
+  if (q.length > 2000) throw new SenderError('That link is too long. Copy the link from the café’s own Google Maps page, or type its name, street and city.');
   // Same café already built or on its way: reuse it instead of paying for it twice.
   const want = normQuery(q);
   for (const b of ctx.db.twinBuild.iter()) {
