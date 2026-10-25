@@ -1,0 +1,12 @@
+Sweep · Latte · cli 54481: 7 prices x 8 futures x 60 days = 56 worlds in 19.7s
+
+price     profit/mo vs now    range (worst..best)    wins   visits   price in reviews
+$5.00           -$861          -$1072..-$523     0/8     1.0%   0%
+$5.50       (current)                              -            0%
+$6.00           +$529           +$280..+$709     8/8    -1.7%   1%
+$6.50           +$926          +$659..+$1374     8/8    -3.5%   3%
+$7.25          +$1256          +$702..+$1854     8/8    -6.3%   7%   <- best
+$8.00           +$950           +$70..+$1489     8/8    -9.7%   8%
+$8.75          -$1646          -$2651..-$687     0/8   -16.0%   8%
+
+experiment 64

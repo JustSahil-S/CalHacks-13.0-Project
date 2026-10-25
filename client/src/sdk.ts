@@ -14,6 +14,7 @@ import { Crowd, type Tally } from './people';
 import { TileScene } from './tilescene';
 
 export const DEFAULT_RADIUS_M = 2414; // 1.5 miles
+export const SWEEP_PREFIX = 'Sweep · '; // price searches are labeled "Sweep · Latte · 1.5 mi"
 export const MAX_RADIUS_M = 11265; // 7 miles
 const SECONDS_PER_DAY = 5;
 
@@ -40,14 +41,24 @@ export interface Fork {
   builds(): BuildProgress[];
   menu(universeId: bigint): { key: string; name: string; category: string; priceCents: number }[];
   rivals(buildId: bigint): { key: string; name: string; x: number; y: number; distanceM: number; rating: number; priceIndex: number; weight: number }[];
-  experiments(rootUniverseId: bigint): { id: bigint; label: string; status: string; copies: number; days: number; radiusM: number }[];
+  experiments(rootUniverseId: bigint): { id: bigint; label: string; status: string; copies: number; days: number; radiusM: number; kind: 'single' | 'sweep' }[];
   results(experimentId: bigint): ExperimentSummary | null;
   /** Daily revenue per copy per option (for band charts). Needs watchExperiment(). */
   dailyRevenue(experimentId: bigint): Map<string, number[][]>;
-  /** Rivals that gained customers vs no change, per day of real traffic. Needs watchExperiment(). */
-  gainers(experimentId: bigint): { name: string; perDay: number }[];
+  /** Rivals that gained customers vs no change, per day of real traffic. Needs watchExperiment(). For a price search, pass the option label. */
+  gainers(experimentId: bigint, option?: string): { name: string; perDay: number }[];
   watchExperiment(experimentId: bigint): Promise<void>;
   runExperiment(a: { rootUniverseId: bigint; label: string; prices: Record<string, number>; radiusM?: number; copies?: number; days?: number }): Promise<void>;
+  /** Prices worth trying for an item that costs `currentCents` (rounded to 25¢, current price excluded). */
+  sweepPrices(currentCents: number): number[];
+  /**
+   * "Find my best price": one run that forks no change plus every price in `pricesCents` x `copies`
+   * paired futures (same luck at every price). Runs on the customer model without Claude, so it
+   * takes seconds. Then call watchExperiment and read sweep().
+   */
+  runSweep(a: { rootUniverseId: bigint; itemKey: string; pricesCents: number[]; copies?: number; days?: number; radiusM?: number }): Promise<void>;
+  /** The live price curve of a price search (fills in while it runs). Needs watchExperiment(). */
+  sweep(experimentId: bigint): SweepResult | null;
 }
 
 export interface BuildProgress {
@@ -59,6 +70,34 @@ export interface BuildProgress {
   progress: number; // 0..1, rough
   mine: boolean; // started from this browser
   ready: boolean; // done and its map is ready: it now appears in cafes()
+}
+
+export interface SweepPoint {
+  option: string; // the option label ('no change' for the current price)
+  priceCents: number;
+  isCurrent: boolean;
+  profitPerMonth: number; // mean paired change vs keeping the current price, $ per 30 days
+  low: number; // worst and best of the paired futures, $ per 30 days
+  high: number;
+  wins: number; // futures where profit beat the current price
+  visitsPct: number; // visits vs current price, %
+  priceMentionShare: number; // share of new reviews that mention price
+}
+
+export interface SweepResult {
+  experimentId: bigint;
+  label: string;
+  status: string; // running | done
+  itemKey: string;
+  itemName: string;
+  currentCents: number;
+  days: number;
+  daysDone: number; // days every future has reached (the curve so far)
+  copies: number;
+  worlds: number; // futures forked in the one transaction
+  points: SweepPoint[]; // by price, current price included
+  best: SweepPoint | null;
+  bestRange: [number, number] | null; // the best price across 400 resamples of the futures (5%-95%), cents
 }
 
 export interface CafeSummary {
@@ -79,6 +118,9 @@ export interface ExperimentSummary {
   label: string;
   status: string;
   copies: number;
+  /** The option these numbers describe: 'price change' for a single run; for a price search its best
+   *  price ('latte=725'), or 'no change' when keeping today's price is best. '' until results are in. */
+  option: string;
   profitWins: number;
   visitsChangePct: number;
   starsChange: number;
@@ -162,6 +204,7 @@ function makeFork(conn: DbConnection, identity: string, httpHost: string, dbName
   };
   const norm = (q: string) => q.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   const universes = (expId: bigint) => [...conn.db.universe.iter()].filter(u => u.experimentId === expId);
+  const isSweep = (label: string) => label.startsWith(SWEEP_PREFIX);
 
   const fork: Fork = {
     conn,
@@ -291,6 +334,7 @@ function makeFork(conn: DbConnection, identity: string, httpHost: string, dbName
           copies: e.copies,
           days: e.days,
           radiusM: conn.db.experimentRadius.experimentId.find(e.id)?.radiusM ?? DEFAULT_RADIUS_M,
+          kind: isSweep(e.label) ? ('sweep' as const) : ('single' as const),
         }));
     },
     results(expId) {
@@ -298,12 +342,17 @@ function makeFork(conn: DbConnection, identity: string, httpHost: string, dbName
       if (!e) return null;
       const rs = [...conn.db.experimentResult.iter()].filter(r => r.experimentId === expId);
       const ctl = rs.find(r => r.optionLabel === 'no change') ?? rs[0];
-      const chg = rs.find(r => r !== ctl);
+      const others = rs.filter(r => r !== ctl);
+      // A single run's headline is its one change. A price search's is its most profitable price,
+      // or no change at all when none beat today's (then every change below is 0).
+      const top = others.reduce<(typeof rs)[number] | undefined>((b, r) => (!b || r.meanProfitCents > b.meanProfitCents ? r : b), undefined);
+      const chg = isSweep(e.label) ? (top && ctl && top.meanProfitCents > ctl.meanProfitCents ? top : ctl) : others[0];
       return {
         label: e.label,
         status: e.status,
         copies: e.copies,
-        profitWins: chg?.profitWins ?? 0,
+        option: chg?.optionLabel ?? '',
+        profitWins: chg && chg !== ctl ? chg.profitWins : 0,
         visitsChangePct: chg && ctl ? (chg.meanVisits / (ctl.meanVisits || 1) - 1) * 100 : 0,
         starsChange: chg && ctl ? chg.meanStars - ctl.meanStars : 0,
         priceMentionShare: chg?.priceMentionShare ?? 0,
@@ -323,7 +372,7 @@ function makeFork(conn: DbConnection, identity: string, httpHost: string, dbName
       }
       return out;
     },
-    gainers(expId) {
+    gainers(expId, option) {
       const e = conn.db.experiment.id.find(expId);
       const unis = universes(expId);
       if (!e || !unis.length) return [];
@@ -341,17 +390,143 @@ function makeFork(conn: DbConnection, identity: string, httpHost: string, dbName
       }
       const perDay = (n: number, label: string) => (n / (copies.get(label) || 1) / Math.max(1, e.days)) * scale;
       const ctl = totals.get('no change') ?? new Map();
-      const chg = totals.get('price change') ?? new Map();
+      const chg = totals.get(option ?? 'price change') ?? new Map();
       return [...chg]
-        .map(([k, v]) => ({ name: names.get(k) ?? k, perDay: perDay(v, 'price change') - perDay(ctl.get(k) ?? 0, 'no change') }))
+        .map(([k, v]) => ({ name: names.get(k) ?? k, perDay: perDay(v, option ?? 'price change') - perDay(ctl.get(k) ?? 0, 'no change') }))
         .filter(g => g.perDay >= 0.5)
         .sort((a, b) => b.perDay - a.perDay);
     },
     watchExperiment(expId) {
-      return fork.subscribe(
-        `exp:${expId}`,
-        universes(expId).flatMap(u => [`SELECT * FROM daily_metric WHERE universe_id = ${u.id}`, `SELECT * FROM rival_tally WHERE universe_id = ${u.id}`])
-      );
+      const base = conn.db.experiment.id.find(expId)?.baseUniverseId;
+      return fork.subscribe(`exp:${expId}`, [
+        // The café's menu too, so a price search knows today's price on the first read.
+        ...(base !== undefined ? [`SELECT * FROM menu_item WHERE universe_id = ${base}`] : []),
+        ...universes(expId).flatMap(u => [`SELECT * FROM daily_metric WHERE universe_id = ${u.id}`, `SELECT * FROM rival_tally WHERE universe_id = ${u.id}`]),
+      ]);
+    },
+    sweepPrices(current) {
+      const steps = [0.9, 1.1, 1.2, 1.3, 1.45, 1.6];
+      const out: number[] = [];
+      for (const f of steps) {
+        const p = Math.max(25, Math.round((current * f) / 25) * 25);
+        if (p !== current && !out.includes(p)) out.push(p);
+      }
+      return out;
+    },
+    runSweep(a) {
+      const name = fork.menu(a.rootUniverseId).find(m => m.key === a.itemKey)?.name ?? a.itemKey;
+      const radiusM = a.radiusM ?? DEFAULT_RADIUS_M;
+      const miles = radiusM / 1609.34;
+      const prices = [...new Set(a.pricesCents)].sort((x, y) => x - y);
+      if (!prices.length || prices.some(p => !Number.isInteger(p) || p < 25 || p > 100_000))
+        return Promise.reject(new Error('runSweep: prices are whole cents from 25 to 100000 (e.g. 650 for $6.50)'));
+      return conn.reducers.startExperimentR({
+        baseUniverseId: a.rootUniverseId,
+        label: `${SWEEP_PREFIX}${name} · ${miles < 1 ? miles.toFixed(2) : miles.toFixed(1)} mi`,
+        optionsJson: JSON.stringify([
+          { label: 'no change', prices: {} },
+          ...prices.map(p => ({ label: `${a.itemKey}=${p}`, prices: { [a.itemKey]: p } })),
+        ]),
+        copies: a.copies ?? 8,
+        days: a.days ?? 60,
+        brain: 'rules', // the daily-choice customer model on its own: no Claude waits
+        radiusM,
+      });
+    },
+    sweep(expId) {
+      const e = conn.db.experiment.id.find(expId);
+      if (!e || !isSweep(e.label)) return null;
+      const options: { label: string; prices: Record<string, number> }[] = JSON.parse(e.optionsJson);
+      const itemKey = Object.keys(options.find(o => Object.keys(o.prices).length)?.prices ?? {})[0] ?? '';
+      const menu = fork.menu(e.baseUniverseId);
+      const item = menu.find(m => m.key === itemKey);
+      const currentCents = item?.priceCents ?? 0;
+      const unis = universes(expId);
+      const totals = new Map<string, Map<number, { profit: number; visits: number; reviews: number; mentions: number }>>();
+      const byId = new Map(unis.map(u => [u.id, { u, t: { profit: 0, visits: 0, reviews: 0, mentions: 0 } }]));
+      // Compare only days every future has reached and whose numbers are loaded here (they arrive with
+      // watchExperiment), so the curve stays paired while it fills in and is empty, not flat, before.
+      const reached = new Map<bigint, number>();
+      for (const m of conn.db.dailyMetric.iter()) {
+        const x = byId.get(m.universeId);
+        if (x) reached.set(m.universeId, Math.max(reached.get(m.universeId) ?? 0, m.tick - x.u.forkTick));
+      }
+      const daysDone = unis.length ? Math.min(...unis.map(u => reached.get(u.id) ?? 0)) : 0;
+      for (const m of conn.db.dailyMetric.iter()) {
+        const x = byId.get(m.universeId);
+        if (!x || m.tick > x.u.forkTick + daysDone) continue;
+        x.t.profit += Number(m.profitCents) / 100;
+        x.t.visits += m.visits;
+        x.t.reviews += m.reviews;
+        x.t.mentions += m.priceMentions;
+      }
+      for (const { u, t } of byId.values()) {
+        if (!totals.has(u.optionLabel)) totals.set(u.optionLabel, new Map());
+        totals.get(u.optionLabel)!.set(u.copyNumber, t);
+      }
+      const ctl = totals.get('no change') ?? new Map();
+      const perMonth = (x: number) => (daysDone ? (x / daysDone) * 30 : 0);
+      const deltasOf = (label: string) =>
+        [...(totals.get(label) ?? new Map()).entries()].filter(([k]) => ctl.has(k)).map(([k, t]) => perMonth(t.profit - ctl.get(k)!.profit));
+      const sumOf = (label: string, f: 'visits' | 'reviews' | 'mentions') =>
+        [...(totals.get(label) ?? new Map()).values()].reduce((s, t) => s + t[f], 0);
+      const ctlVisits = sumOf('no change', 'visits');
+      const points: SweepPoint[] = options.map(o => {
+        const isCurrent = o.label === 'no change';
+        const d = isCurrent ? [] : deltasOf(o.label);
+        const mean = d.length ? d.reduce((s, x) => s + x, 0) / d.length : 0;
+        const reviews = sumOf(o.label, 'reviews');
+        return {
+          option: o.label,
+          priceCents: isCurrent ? currentCents : o.prices[itemKey],
+          isCurrent,
+          profitPerMonth: mean,
+          low: d.length ? Math.min(...d) : 0,
+          high: d.length ? Math.max(...d) : 0,
+          wins: d.filter(x => x > 0).length,
+          visitsPct: isCurrent || !ctlVisits ? 0 : (sumOf(o.label, 'visits') / ctlVisits - 1) * 100,
+          priceMentionShare: reviews ? sumOf(o.label, 'mentions') / reviews : 0,
+        };
+      });
+      points.sort((x, y) => x.priceCents - y.priceCents);
+      const best = daysDone ? points.reduce((b, p) => (p.profitPerMonth > b.profitPerMonth ? p : b), points.find(p => p.isCurrent) ?? points[0]) : null;
+      // How sure is "best"? Resample the paired futures (seeded, so it's stable) and see where the peak lands.
+      let bestRange: [number, number] | null = null;
+      const copies = [...ctl.keys()];
+      if (daysDone && copies.length > 1) {
+        let seed = Number(expId % 2147483647n) || 1;
+        const rand = () => ((seed = (seed * 48271) % 2147483647) / 2147483647);
+        const peaks: number[] = [];
+        for (let r = 0; r < 400; r++) {
+          const pick = copies.map(() => copies[Math.floor(rand() * copies.length)]);
+          let top = { price: currentCents, v: 0 };
+          for (const o of options) {
+            if (o.label === 'no change') continue;
+            const rows = totals.get(o.label);
+            if (!rows) continue;
+            const v = pick.reduce((s, k) => s + ((rows.get(k)?.profit ?? 0) - (ctl.get(k)?.profit ?? 0)), 0) / pick.length;
+            if (v > top.v) top = { price: o.prices[itemKey], v };
+          }
+          peaks.push(top.price);
+        }
+        peaks.sort((x, y) => x - y);
+        bestRange = [peaks[Math.floor(peaks.length * 0.05)], peaks[Math.floor(peaks.length * 0.95)]];
+      }
+      return {
+        experimentId: expId,
+        label: e.label,
+        status: e.status,
+        itemKey,
+        itemName: item?.name ?? itemKey,
+        currentCents,
+        days: e.days,
+        daysDone,
+        copies: e.copies,
+        worlds: unis.length,
+        points,
+        best,
+        bestRange,
+      };
     },
     runExperiment(a) {
       return conn.reducers.startExperimentR({
@@ -385,6 +560,7 @@ export interface CustomerInfo {
   type: string;
   visitsPerWeek: number;
   priceSensitivity: number;
+  priceCeilingPct: number; // the largest rise on an item they'll put up with (choice.ts ceilingFor)
   shareHere: number;
   mood: number;
   usualOrder: string[];
@@ -467,10 +643,12 @@ export class ForkMap {
   }
 
   /** Animate copy #1 of an experiment option ('price change' or 'no change'). Frames 'street'. */
-  async showExperiment(experimentId: bigint, option = 'price change') {
-    const u = [...this.fork.conn.db.universe.iter()].find(
-      x => x.experimentId === experimentId && x.optionLabel === option && x.copyNumber === 1
-    );
+  async showExperiment(experimentId: bigint, option?: string) {
+    const sweep = this.fork.sweep(experimentId);
+    const label = option ?? (sweep ? this.fork.results(experimentId)?.option || sweep.best?.option : 'price change');
+    const unis = [...this.fork.conn.db.universe.iter()].filter(x => x.experimentId === experimentId && x.copyNumber === 1);
+    // A price search replays its best price (or its first price until results arrive).
+    const u = unis.find(x => x.optionLabel === label) ?? unis.find(x => x.optionLabel !== 'no change');
     if (!u) throw new Error('That experiment has no animated copy.');
     const r = this.fork.conn.db.experimentRadius.experimentId.find(experimentId)?.radiusM;
     if (r) this.setRadius(r);
@@ -548,6 +726,7 @@ export class ForkMap {
       type: a.archetype,
       visitsPerWeek: a.visitsPerWeek,
       priceSensitivity: a.priceSensitivity,
+      priceCeilingPct: Math.round((0.15 + 0.6 * (1 - Math.min(1, Math.max(0, a.priceSensitivity)))) * 100),
       shareHere: a.pHere / (a.pHere + a.pCompetitor || 1),
       mood: a.satisfaction,
       usualOrder: (JSON.parse(a.usualOrder) as string[]).map(k => menu.get(k) ?? k),

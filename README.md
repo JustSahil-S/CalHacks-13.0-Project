@@ -72,6 +72,17 @@ shared by copy *k* of every option, so a price change can only move people who w
 have come here: the futures differ because of the price, not luck. The original odds system is
 still available as `ai-odds` / `rules-odds` for comparison.
 
+## Find my best price
+
+Instead of testing one price, the owner can let Fork search: one run forks no change plus up to
+7 prices for an item, 8 paired futures each (56 worlds, 200 customers, 60 days), on the customer
+model without waiting on Claude, so it finishes in seconds. The SDK turns it into a profit curve:
+mean paired profit change per price with the worst and best future, how often each price beat
+today's, visits, and the share of reviews that mention price. The best price comes with a range
+from resampling the futures 400 times, so a flat top reads as "anywhere from $A to $B". "Confirm
+with Claude" then runs the best price as a normal experiment where Claude reads every customer who
+notices. CLI: `node tools/sweep.mjs <rootUniverseId> <itemKey>`.
+
 ## Sponsors
 
 - **SpacetimeDB:** the whole backend. Tables hold every universe, customer, visit and review;
