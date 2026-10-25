@@ -422,6 +422,8 @@ export const reassemble_build = spacetimedb.reducer({ buildId: t.u64() }, (ctx, 
   syncCard(ctx, buildId);
 });
 
+const MAP_ATTEMPTS = 6;
+
 /** (Re)fetch the OpenStreetMap neighborhood for a finished build. Runs automatically after a build. */
 export const fetch_area_map = spacetimedb.reducer({ buildId: t.u64() }, (ctx, { buildId }) => {
   requireAdmin(ctx);
@@ -445,6 +447,10 @@ export const build_area_map = spacetimedb.procedure(
         else tx.db.areaMap.insert(row);
         syncCard(tx, buildId);
       });
+    // The free OpenStreetMap servers sometimes all fail at once (502/504/timeouts): retry a few
+    // times, a minute apart, before giving up, so a café doesn't stay invisible over a brief outage.
+    const prev = ctx.withTx(tx => tx.db.areaMap.buildId.find(buildId));
+    const attempt = prev?.status === 'retrying' ? Number(/attempt (\d+)/.exec(prev.detail)?.[1] ?? 1) + 1 : 1;
     save('fetching', 'Fetching the neighborhood from OpenStreetMap', '');
     try {
       const map = fetchAreaMap(ctx, b.placeJson, b.competitorsJson);
@@ -454,7 +460,12 @@ export const build_area_map = spacetimedb.procedure(
         JSON.stringify(map)
       );
     } catch (e) {
-      save('failed', String(e).slice(0, 400), '');
+      if (attempt < MAP_ATTEMPTS) {
+        save('retrying', `Map servers busy, trying again in a minute (attempt ${attempt} of ${MAP_ATTEMPTS} failed)`, '');
+        ctx.withTx(tx =>
+          tx.db.mapJob.insert({ scheduledId: 0n, scheduledAt: ScheduleAt.time(tx.timestamp.microsSinceUnixEpoch + 60_000_000n), buildId })
+        );
+      } else save('failed', String(e).slice(0, 400), '');
     }
     return {};
   }
