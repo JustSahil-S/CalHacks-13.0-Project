@@ -1,0 +1,2 @@
+{ "baseUniverseId": 567, "label": "Café de Olla $4.20→$4.70 · 1.5 mi", "brain": "ai", "copies": 10, "days": 60, "radiusM": 2414,
+  "options": [ { "label": "no change", "prices": {} }, { "label": "price change", "prices": { "caf_de_olla": 470 } } ] }

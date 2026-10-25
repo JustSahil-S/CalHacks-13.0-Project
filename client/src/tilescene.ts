@@ -241,14 +241,19 @@ export class TileScene {
 
   private drawRadius(radiusM: number) {
     const ring = this.circle(radiusM);
-    // A big square around the café, not the whole globe (which smears near the horizon).
-    const R = Math.max(radiusM * 5, 25000);
-    const world: [number, number][] = [this.ll(-R, -R), this.ll(R, -R), this.ll(R, R), this.ll(-R, R), this.ll(-R, -R)];
-    (this.map.getSource('mask') as GeoJSONSource | undefined)?.setData({
-      type: 'Feature',
-      properties: {},
-      geometry: { type: 'Polygon', coordinates: [world, [...ring].reverse()] },
-    });
+    // The faded outside: a band from the radius out to far away, built from simple quads. (A big
+    // polygon with the radius as a hole loses its hole when the tiler clips it at street zoom,
+    // which painted the whole map over.)
+    const outer = this.circle(Math.max(radiusM * 8, 40000));
+    const quads: GeoJSON.Feature[] = [];
+    for (let k = 0; k + 1 < ring.length; k++) {
+      quads.push({
+        type: 'Feature',
+        properties: {},
+        geometry: { type: 'Polygon', coordinates: [[ring[k], outer[k], outer[k + 1], ring[k + 1], ring[k]]] },
+      });
+    }
+    (this.map.getSource('mask') as GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features: quads });
     (this.map.getSource('ring') as GeoJSONSource | undefined)?.setData({
       type: 'Feature',
       properties: {},

@@ -42961,20 +42961,24 @@ var Jc = {
 		}), this.map.on("mouseenter", "people", () => this.map.getCanvas().style.cursor = "pointer"), this.map.on("mouseleave", "people", () => this.map.getCanvas().style.cursor = ""), this.shownRadiusM && this.drawRadius(this.shownRadiusM);
 	}
 	drawRadius(e) {
-		let t = this.circle(e), n = Math.max(e * 5, 25e3), r = [
-			this.ll(-n, -n),
-			this.ll(n, -n),
-			this.ll(n, n),
-			this.ll(-n, n),
-			this.ll(-n, -n)
-		];
-		this.map.getSource("mask")?.setData({
+		let t = this.circle(e), n = this.circle(Math.max(e * 8, 4e4)), r = [];
+		for (let e = 0; e + 1 < t.length; e++) r.push({
 			type: "Feature",
 			properties: {},
 			geometry: {
 				type: "Polygon",
-				coordinates: [r, [...t].reverse()]
+				coordinates: [[
+					t[e],
+					n[e],
+					n[e + 1],
+					t[e + 1],
+					t[e]
+				]]
 			}
+		});
+		this.map.getSource("mask")?.setData({
+			type: "FeatureCollection",
+			features: r
 		}), this.map.getSource("ring")?.setData({
 			type: "Feature",
 			properties: {},
