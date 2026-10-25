@@ -333,10 +333,13 @@ function agentCares(
   baseline: string,
   trends: ItemTrend[],
   hasHabit: boolean,
+  seesEdits: boolean,
 ) {
   // No edits → keep the control plan. Re-asking Claude would resample noise, not a treatment effect.
   if (!changes && trends.length === 0) return false;
   if (hasHabit) return true;
+  // Anyone who walks into the edited shop sees its new menu, whatever they usually order
+  if (seesEdits) return true;
   if (
     agentWantsTrend(
       agent.agentId,
@@ -656,6 +659,25 @@ function baselineOf(conn: DbConnection, job: AgentJob, agent: CustomerAgent) {
     .join("; ");
 }
 
+function baseVisitsHome(
+  conn: DbConnection,
+  job: AgentJob,
+  agentId: number,
+  homeId: string,
+) {
+  const day = [...conn.db.simDay.iter()].find(
+    (row) => row.scenarioId === 0 && row.day === job.day,
+  );
+  if (!day) return false;
+  return [...conn.db.simVisit.iter()].some(
+    (visit) =>
+      visit.dayId === day.dayId &&
+      visit.agentId === agentId &&
+      visit.placeId === homeId &&
+      visit.chance > 0,
+  );
+}
+
 function historyLines(conn: DbConnection, scenarioId: number, homeId: string) {
   const events = rows(conn.db.priceEvent)
     .filter((event) => event.scenarioId === scenarioId)
@@ -877,9 +899,19 @@ async function processJob(conn: DbConnection, job: AgentJob) {
     const baseline =
       job.scenarioId === 0 ? "" : baselineOf(conn, job, agent);
     const habitVisits = habitVisitsOf(conn, job, agent.agentId);
+    const seesEdits =
+      agent.placeId === homeId || baseVisitsHome(conn, job, agent.agentId, homeId);
     if (
       job.scenarioId !== 0 &&
-      !agentCares(agent, homeId, edits, baseline, trends, habitVisits.length > 0)
+      !agentCares(
+        agent,
+        homeId,
+        edits,
+        baseline,
+        trends,
+        habitVisits.length > 0,
+        seesEdits,
+      )
     ) {
       submit(
         agent,

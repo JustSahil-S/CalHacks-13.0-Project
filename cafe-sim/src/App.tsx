@@ -366,15 +366,31 @@ function App() {
                   >
                     5x
                   </button>
-                  <button
-                    type="button"
-                    className="danger"
-                    onClick={onDeleteScenario}
-                  >
-                    Delete
-                  </button>
                 </>
               )}
+              {scenarioId !== 0 && (
+                <button
+                  type="button"
+                  className="danger"
+                  onClick={onDeleteScenario}
+                >
+                  Delete
+                </button>
+              )}
+              <button
+                type="button"
+                className={
+                  selectedPlaceId === store.placeId ? "danger-fill" : "danger"
+                }
+                title={`Show ${store.name}'s menu`}
+                onClick={() =>
+                  setSelectedPlaceId((id) =>
+                    id === store.placeId ? null : store.placeId,
+                  )
+                }
+              >
+                Menu
+              </button>
             </div>
             {(requestError || job?.status === "error") && statusBanner}
           </div>
@@ -459,39 +475,21 @@ function App() {
           <div className="radius-row">
             <label className="field grow">
               <span>Max competitors</span>
-              <input
-                type="number"
+              <NumberField
                 min={1}
                 max={COMPETITOR_LIMIT}
-                step={1}
                 value={maxCompetitors}
-                onChange={(e) =>
-                  setMaxCompetitors(
-                    Math.min(
-                      COMPETITOR_LIMIT,
-                      Math.max(1, Math.round(Number(e.target.value)) || 1),
-                    ),
-                  )
-                }
+                onChange={setMaxCompetitors}
                 disabled={running}
               />
             </label>
             <label className="field grow">
               <span>Agents</span>
-              <input
-                type="number"
+              <NumberField
                 min={1}
                 max={200}
-                step={1}
                 value={totalAgents}
-                onChange={(e) =>
-                  setTotalAgents(
-                    Math.min(
-                      200,
-                      Math.max(1, Math.round(Number(e.target.value)) || 1),
-                    ),
-                  )
-                }
+                onChange={setTotalAgents}
                 disabled={running}
               />
             </label>
@@ -525,6 +523,48 @@ function App() {
         </form>
       </div>
     </main>
+  );
+}
+
+// Keeps the typed text as-is while editing (empty, partial) and only clamps on blur
+function NumberField({
+  min,
+  max,
+  value,
+  onChange,
+  disabled,
+}: {
+  min: number;
+  max: number;
+  value: number;
+  onChange: (value: number) => void;
+  disabled?: boolean;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => setDraft(String(value)), [value]);
+  const clamp = (text: string) =>
+    Math.min(max, Math.max(min, Math.round(Number(text)) || min));
+  return (
+    <input
+      type="number"
+      inputMode="numeric"
+      min={min}
+      max={max}
+      step={1}
+      value={draft}
+      onChange={(e) => {
+        setDraft(e.target.value);
+        const n = Number(e.target.value);
+        if (e.target.value !== "" && Number.isFinite(n) && n >= min && n <= max)
+          onChange(Math.round(n));
+      }}
+      onBlur={() => {
+        const next = clamp(draft);
+        setDraft(String(next));
+        onChange(next);
+      }}
+      disabled={disabled}
+    />
   );
 }
 

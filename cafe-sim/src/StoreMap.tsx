@@ -119,8 +119,8 @@ function lockRotation(map: MapLibreMap) {
 
 const EMPTY_PEOPLE: FeatureCollection = { type: "FeatureCollection", features: [] };
 
-const BUILDING_EXTRUDE = 1.6;
-const BUILDING_HEIGHT_CAP = 100;
+const BUILDING_EXTRUDE = 1.12;
+const BUILDING_HEIGHT_CAP = 70;
 const BUILDING_HEIGHT = [
   "min",
   [

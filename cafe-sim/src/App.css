@@ -216,6 +216,17 @@ button.danger:hover {
   background: rgba(178, 58, 42, 0.08);
 }
 
+button.danger-fill {
+  background: var(--bad);
+  color: #fff;
+  border-color: var(--bad);
+}
+
+button.danger-fill:hover {
+  background: var(--bad);
+  filter: brightness(0.92);
+}
+
 button:disabled {
   opacity: 0.45;
   cursor: default;
