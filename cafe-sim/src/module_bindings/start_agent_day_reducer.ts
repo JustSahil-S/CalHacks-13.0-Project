@@ -13,4 +13,5 @@ import {
 export default {
   scenarioId: __t.u32(),
   days: __t.u32(),
+  runs: __t.u32(),
 };

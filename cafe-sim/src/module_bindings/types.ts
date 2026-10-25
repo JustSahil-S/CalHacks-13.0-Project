@@ -177,6 +177,16 @@ export const PopulateJob = __t.object("PopulateJob", {
 });
 export type PopulateJob = __Infer<typeof PopulateJob>;
 
+export const PriceEvent = __t.object("PriceEvent", {
+  eventId: __t.u32(),
+  scenarioId: __t.u32(),
+  itemName: __t.string(),
+  priceCents: __t.u32(),
+  kind: __t.string(),
+  createdAt: __t.timestamp(),
+});
+export type PriceEvent = __Infer<typeof PriceEvent>;
+
 export const Review = __t.object("Review", {
   reviewId: __t.string(),
   placeId: __t.string(),

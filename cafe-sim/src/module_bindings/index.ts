@@ -76,6 +76,7 @@ import MenuItemRow from "./menu_item_table";
 import MenuSourceRow from "./menu_source_table";
 import MessageRow from "./message_table";
 import PopulateJobRow from "./populate_job_table";
+import PriceEventRow from "./price_event_table";
 import ReviewRow from "./review_table";
 import ScenarioRow from "./scenario_table";
 import ScenarioEditRow from "./scenario_edit_table";
@@ -231,6 +232,20 @@ const tablesSchema = __schema({
       { name: 'populate_job_job_id_key', constraint: 'unique', columns: ['jobId'] },
     ],
   }, PopulateJobRow),
+  priceEvent: __table({
+    name: 'price_event',
+    indexes: [
+      { accessor: 'event_id', name: 'price_event_event_id_idx_btree', algorithm: 'btree', columns: [
+        'eventId',
+      ] },
+      { accessor: 'scenario_id', name: 'price_event_scenario_id_idx_btree', algorithm: 'btree', columns: [
+        'scenarioId',
+      ] },
+    ],
+    constraints: [
+      { name: 'price_event_event_id_key', constraint: 'unique', columns: ['eventId'] },
+    ],
+  }, PriceEventRow),
   review: __table({
     name: 'review',
     indexes: [
@@ -409,6 +424,8 @@ type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "ta
     readonly "menu_source": Omit<typeof tablesSchema.schemaType.tables["menuSource"], "accessorName"> & { readonly accessorName: "menu_source" };
     /** @deprecated Use `populateJob` instead. This alias will be removed in the next major version. */
     readonly "populate_job": Omit<typeof tablesSchema.schemaType.tables["populateJob"], "accessorName"> & { readonly accessorName: "populate_job" };
+    /** @deprecated Use `priceEvent` instead. This alias will be removed in the next major version. */
+    readonly "price_event": Omit<typeof tablesSchema.schemaType.tables["priceEvent"], "accessorName"> & { readonly accessorName: "price_event" };
     /** @deprecated Use `scenarioEdit` instead. This alias will be removed in the next major version. */
     readonly "scenario_edit": Omit<typeof tablesSchema.schemaType.tables["scenarioEdit"], "accessorName"> & { readonly accessorName: "scenario_edit" };
     /** @deprecated Use `simDay` instead. This alias will be removed in the next major version. */
@@ -445,6 +462,7 @@ const tableAccessorAliases = {
   "menu_item": "menuItem",
   "menu_source": "menuSource",
   "populate_job": "populateJob",
+  "price_event": "priceEvent",
   "scenario_edit": "scenarioEdit",
   "sim_day": "simDay",
   "sim_store_day": "simStoreDay",
@@ -486,6 +504,8 @@ export type DbView = __DbViewBase & {
   readonly "menu_source": __DbViewBase["menuSource"];
   /** @deprecated Use `populateJob` instead. This alias will be removed in the next major version. */
   readonly "populate_job": __DbViewBase["populateJob"];
+  /** @deprecated Use `priceEvent` instead. This alias will be removed in the next major version. */
+  readonly "price_event": __DbViewBase["priceEvent"];
   /** @deprecated Use `scenarioEdit` instead. This alias will be removed in the next major version. */
   readonly "scenario_edit": __DbViewBase["scenarioEdit"];
   /** @deprecated Use `simDay` instead. This alias will be removed in the next major version. */
@@ -516,6 +536,8 @@ export type Tables = __TablesBase & {
   readonly "menu_source": __TablesBase["menuSource"];
   /** @deprecated Use `populateJob` instead. This alias will be removed in the next major version. */
   readonly "populate_job": __TablesBase["populateJob"];
+  /** @deprecated Use `priceEvent` instead. This alias will be removed in the next major version. */
+  readonly "price_event": __TablesBase["priceEvent"];
   /** @deprecated Use `scenarioEdit` instead. This alias will be removed in the next major version. */
   readonly "scenario_edit": __TablesBase["scenarioEdit"];
   /** @deprecated Use `simDay` instead. This alias will be removed in the next major version. */

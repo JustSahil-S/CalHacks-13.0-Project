@@ -1,4 +1,3 @@
-/* ----- CSS Reset & Global Settings ----- */
 *,
 *::before,
 *::after {
@@ -7,23 +6,34 @@
   padding: 0;
 }
 
-/* ----- Color Variables ----- */
 :root {
-  --theme-color: #3dc373;
-  --theme-color-contrast: #08180e;
-  --textbox-color: #edfef4;
-  color-scheme: light dark;
+  --paper: #f3eee4;
+  --paper-2: #ebe4d6;
+  --sheet: rgba(251, 248, 242, 0.92);
+  --ink: #1f1c18;
+  --ink-2: #5d564b;
+  --ink-3: #958c7c;
+  --rule: rgba(31, 28, 24, 0.12);
+  --cafe: #d9472b;
+  --rival: #1f6f6b;
+  --home: #c9b99c;
+  --good: #3f7d3a;
+  --bad: #b23a2a;
+  --shadow:
+    0 1px 0 rgba(255, 255, 255, 0.6) inset,
+    0 18px 40px -24px rgba(60, 45, 20, 0.45);
+  --display: 'Fraunces', Georgia, serif;
+  --body: 'IBM Plex Sans', 'Helvetica Neue', sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --theme-color: var(--ink);
+  --theme-color-contrast: var(--paper);
+  --textbox-color: rgba(255, 255, 255, 0.6);
+  --page-bg: var(--paper);
+  --page-text: var(--ink);
+  --border-color: var(--rule);
+  color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --theme-color: #4cf490;
-    --theme-color-contrast: #132219;
-    --textbox-color: #0f311d;
-  }
-}
-
-/* ----- Page Setup ----- */
 html,
 body,
 #root {
@@ -32,47 +42,69 @@ body,
 }
 
 body {
-  background-color: Canvas;
-  color: CanvasText;
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu',
-    'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  background-color: var(--paper);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 14px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.35;
+  mix-blend-mode: multiply;
+  z-index: 30;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .4 0 0 0 0 .33 0 0 0 0 .2 0 0 0 .09 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
 code {
-  font-family:
-    source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+  font-family: var(--mono);
 }
 
-/* ----- Buttons ----- */
 button {
-  padding: 0.5rem 0.75rem;
-  border: none;
-  border-radius: 0.375rem;
-  background-color: var(--theme-color);
-  color: var(--theme-color-contrast);
+  font: 500 13.5px var(--body);
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  padding: 8px 14px;
   cursor: pointer;
-  font-weight: 600;
-  letter-spacing: 0.1px;
-  font-family: monospace;
+  transition:
+    transform 0.12s,
+    background 0.12s;
 }
 
-/* ----- Inputs & Textareas ----- */
+button:hover {
+  background: rgba(31, 28, 24, 0.05);
+}
+
+button:active {
+  transform: translateY(1px);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+select,
 input,
 textarea {
-  border: none;
-  border-radius: 0.375rem;
-  caret-color: var(--theme-color);
-  font-family: monospace;
-  font-weight: 600;
-  letter-spacing: 0.1px;
-  padding: 0.5rem 0.75rem;
+  font: 14px var(--body);
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 7px 9px;
 }
 
+select:focus,
 input:focus,
 textarea:focus {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--theme-color);
+  outline: 2px solid var(--cafe);
+  outline-offset: 1px;
 }

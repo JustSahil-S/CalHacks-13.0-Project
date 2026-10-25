@@ -1,4 +1,10 @@
-import { useEffect, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import "./App.css";
 import { procedures, reducers, tables } from "./module_bindings";
 import {
@@ -8,17 +14,35 @@ import {
   useTable,
 } from "spacetimedb/react";
 import StoreMap from "./StoreMap";
-import MenuSection from "./MenuSection";
 import MenuPanel from "./MenuPanel";
-import Timeline from "./Timeline";
+import Timeline, { type SimHandle } from "./Timeline";
+import Assistant from "./Assistant";
+import type { MapTrip } from "./liveSim";
 
 const MAX_RADIUS_KM = 2;
 const COMPETITOR_LIMIT = 50;
+const ENSEMBLE_KEY = "cafe-sim-ensemble";
 
-function formatDistance(meters: number) {
-  return meters < 1000
-    ? `${Math.round(meters)} m`
-    : `${(meters / 1000).toFixed(2)} km`;
+function loadEnsemble(): Record<string, boolean> {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(ENSEMBLE_KEY) ?? "{}") as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, boolean>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function ForkLogo({ className }: { className?: string }) {
+  return (
+    <p
+      className={className ? `fork-logo ${className}` : "fork-logo"}
+      aria-label="Fork"
+    >
+      fork<span className="fork-dot">.</span>
+    </p>
+  );
 }
 
 function errorMessage(error: unknown) {
@@ -30,8 +54,8 @@ function App() {
   const { isActive: connected } = useSpacetimeDB();
   const populateStore = useProcedure(procedures.populateStore);
   const clearStoreData = useReducer(reducers.clearStoreData);
-  const generateAllAgents = useProcedure(procedures.generateAllAgents);
   const fetchMenus = useProcedure(procedures.fetchMenus);
+  const generateAllAgents = useProcedure(procedures.generateAllAgents);
   const createScenario = useReducer(reducers.createScenario);
   const renameScenario = useReducer(reducers.renameScenario);
   const deleteScenario = useReducer(reducers.deleteScenario);
@@ -45,27 +69,26 @@ function App() {
     number | null
   >(null);
   const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
+  const [liveTrips, setLiveTrips] = useState<MapTrip[]>([]);
+  const [liveStreamId, setLiveStreamId] = useState(0);
 
-  const [businesses, businessesReady] = useTable(tables.business);
+  const [businesses] = useTable(tables.business);
   const [competitorLinks] = useTable(tables.competitor);
   const [jobs] = useTable(tables.populate_job);
-  const [reviews] = useTable(tables.review);
-  const loadedReviews = new Map<string, number>();
-  for (const review of reviews)
-    loadedReviews.set(
-      review.placeId,
-      (loadedReviews.get(review.placeId) ?? 0) + 1,
-    );
   const [agents] = useTable(tables.customer_agent);
-  const agentCounts = new Map<string, number>();
-  for (const agent of agents)
-    agentCounts.set(agent.placeId, (agentCounts.get(agent.placeId) ?? 0) + 1);
   const [totalAgents, setTotalAgents] = useState(30);
 
   const [mapsUrl, setMapsUrl] = useState("");
   const [radiusKm, setRadiusKm] = useState(1);
   const [maxCompetitors, setMaxCompetitors] = useState(20);
   const [requestError, setRequestError] = useState("");
+  const [onMap, setOnMap] = useState(true);
+  const [ensembleById, setEnsembleById] = useState(loadEnsemble);
+  const ensemble = scenarioId !== 0 && !!ensembleById[String(scenarioId)];
+  const [renaming, setRenaming] = useState(false);
+  const [draftName, setDraftName] = useState("");
+  const skipRenameBlur = useRef(false);
+  const simRef = useRef<SimHandle | null>(null);
 
   const job = jobs[0];
   const running = job?.status === "running";
@@ -80,11 +103,15 @@ function App() {
     .filter((row) => row.business)
     .sort((a, b) => a.link.distanceMeters - b.link.distanceMeters);
 
-  // The selected store's agents are listed first, then stores with the most reviews
-  const storeRank = (placeId: string) =>
-    placeId === store?.placeId
-      ? Number.MAX_SAFE_INTEGER
-      : (businessesById.get(placeId)?.reviewsCount ?? 0);
+  const onLiveTrips = useCallback((trips: MapTrip[], jobId: number) => {
+    setLiveTrips(trips);
+    setLiveStreamId(jobId);
+  }, []);
+
+  const stopLiveSim = useCallback(() => {
+    setLiveTrips([]);
+    setLiveStreamId(0);
+  }, []);
 
   const onPopulate = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -100,22 +127,21 @@ function App() {
         radiusKm,
         maxCompetitors,
       });
+      await fetchMenus();
       await generateAllAgents({ totalAgents });
+      stopLiveSim();
+      setOnMap(true);
     } catch (error) {
       setRequestError(errorMessage(error));
     }
   };
 
-  const onCreateAgents = () => {
-    if (
-      agents.length > 0 &&
-      !window.confirm("This replaces the current agents. Continue?")
-    )
-      return;
-    setRequestError("");
-    generateAllAgents({ totalAgents }).catch((error) =>
-      setRequestError(errorMessage(error)),
-    );
+  const goToSetup = () => {
+    setSelectedPlaceId(null);
+    stopLiveSim();
+    if (store?.mapsUrl) setMapsUrl(store.mapsUrl);
+    if (job?.radiusKm) setRadiusKm(job.radiusKm);
+    setOnMap(false);
   };
 
   // Reducers don't return ids, so a newly created scenario is selected once it shows up
@@ -134,6 +160,10 @@ function App() {
       setScenarioId(0);
   }, [scenarios, scenarioId]);
 
+  useEffect(() => {
+    setRenaming(false);
+  }, [scenarioId]);
+
   const onCreateScenario = () => {
     setRequestError("");
     setSelectNewScenarioAfter(
@@ -144,13 +174,46 @@ function App() {
     );
   };
 
-  const onRenameScenario = () => {
+  const onStartRename = () => {
     const current = scenarios.find((s) => s.scenarioId === scenarioId);
-    const name = current && window.prompt("Scenario name", current.name);
-    if (!name) return;
+    if (!current) return;
+    skipRenameBlur.current = false;
+    setDraftName(current.name);
+    setRenaming(true);
+  };
+
+  const onCancelRename = () => {
+    skipRenameBlur.current = true;
+    setRenaming(false);
+  };
+
+  const onSaveRename = (event?: FormEvent) => {
+    event?.preventDefault();
+    if (skipRenameBlur.current) {
+      skipRenameBlur.current = false;
+      return;
+    }
+    skipRenameBlur.current = true;
+    const current = scenarios.find((s) => s.scenarioId === scenarioId);
+    const name = draftName.trim().replace(/\s+/g, " ");
+    setRenaming(false);
+    if (!current || !name || name === current.name) return;
+    setRequestError("");
     renameScenario({ scenarioId, name }).catch((error) =>
       setRequestError(errorMessage(error)),
     );
+  };
+
+  const onToggleEnsemble = () => {
+    if (scenarioId === 0) return;
+    setEnsembleById((prev) => {
+      const next = {
+        ...prev,
+        [String(scenarioId)]: !prev[String(scenarioId)],
+      };
+      localStorage.setItem(ENSEMBLE_KEY, JSON.stringify(next));
+      return next;
+    });
   };
 
   const onDeleteScenario = () => {
@@ -163,11 +226,6 @@ function App() {
     deleteScenario({ scenarioId }).catch((error) =>
       setRequestError(errorMessage(error)),
     );
-  };
-
-  const onFetchMenus = () => {
-    setRequestError("");
-    fetchMenus().catch((error) => setRequestError(errorMessage(error)));
   };
 
   const onClear = () => {
@@ -183,176 +241,27 @@ function App() {
 
   if (!connected) {
     return (
-      <main className="App">
-        <h1>Connecting...</h1>
+      <main className="App setup-view">
+        <div className="setup-card">
+          <h1>Connecting...</h1>
+        </div>
       </main>
     );
   }
 
-  return (
-    <main className="App">
-      <header>
-        <h1>Store &amp; Competitor Finder</h1>
-        <p className="muted">
-          Paste a Google Maps link and how many customer agents you want. We
-          load the shops first, then pull at most 300 review texts in proportion
-          to each store&apos;s Google review total and turn those into personas.
-        </p>
-      </header>
+  const statusBanner = (job?.message || requestError) && (
+    <p
+      className={`status ${requestError || job?.status === "error" ? "error" : job?.status}`}
+    >
+      {running && <span className="spinner" />}
+      {requestError || job?.message}
+    </p>
+  );
 
-      <form className="card controls" onSubmit={onPopulate}>
-        <label className="field">
-          <span>Google Maps link</span>
-          <input
-            type="url"
-            placeholder="https://www.google.com/maps/place/..."
-            value={mapsUrl}
-            onChange={(e) => setMapsUrl(e.target.value)}
-            disabled={running}
-            required
-          />
-        </label>
-
-        <div className="radius-row">
-          <label className="field grow">
-            <span>
-              Competitor radius: <strong>{radiusKm.toFixed(1)} km</strong>
-            </span>
-            <input
-              type="range"
-              min={0.1}
-              max={MAX_RADIUS_KM}
-              step={0.1}
-              value={radiusKm}
-              onChange={(e) => setRadiusKm(Number(e.target.value))}
-              disabled={running}
-            />
-          </label>
-          <label className="field max-field">
-            <span>Max competitors</span>
-            <input
-              type="number"
-              min={1}
-              max={COMPETITOR_LIMIT}
-              step={1}
-              value={maxCompetitors}
-              onChange={(e) =>
-                setMaxCompetitors(
-                  Math.min(
-                    COMPETITOR_LIMIT,
-                    Math.max(1, Math.round(Number(e.target.value)) || 1),
-                  ),
-                )
-              }
-              disabled={running}
-            />
-          </label>
-          <label className="field max-field">
-            <span>Agents</span>
-            <input
-              type="number"
-              min={1}
-              max={200}
-              step={1}
-              value={totalAgents}
-              onChange={(e) =>
-                setTotalAgents(
-                  Math.min(
-                    200,
-                    Math.max(1, Math.round(Number(e.target.value)) || 1),
-                  ),
-                )
-              }
-              disabled={running}
-            />
-          </label>
-        </div>
-
-        <div className="actions">
-          <button type="submit" disabled={running || !mapsUrl.trim()}>
-            {running ? "Loading..." : "Load store & agents"}
-          </button>
-          <button
-            type="button"
-            className="danger"
-            onClick={onClear}
-            disabled={running || businesses.length === 0}
-          >
-            Clear data
-          </button>
-        </div>
-      </form>
-
-      {(job?.message || requestError) && (
-        <p
-          className={`status ${requestError || job?.status === "error" ? "error" : job?.status}`}
-        >
-          {running && <span className="spinner" />}
-          {requestError || job?.message}
-        </p>
-      )}
-
-      {store && (
-        <section className="card store">
-          <h2>
-            <a href={store.mapsUrl} target="_blank" rel="noreferrer">
-              {store.name}
-            </a>
-          </h2>
-          <p className="muted">
-            {store.category} · {store.address}
-          </p>
-          <p>
-            ⭐ {store.rating.toFixed(1)} ({store.reviewsCount} reviews,{" "}
-            {loadedReviews.get(store.placeId) ?? 0} loaded)
-            {store.price && ` · ${store.price}`}
-            {store.phone && ` · ${store.phone}`}
-          </p>
-        </section>
-      )}
-
-      {store && (
-        <section className="card map-card">
-          <div className="scenario-bar">
-            <label>
-              Universe{" "}
-              <select
-                value={scenarioId}
-                onChange={(e) => setScenarioId(Number(e.target.value))}
-              >
-                <option value={0}>Base (real prices)</option>
-                {scenarios.map((s) => (
-                  <option key={s.scenarioId} value={s.scenarioId}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button type="button" onClick={onCreateScenario}>
-              New scenario
-            </button>
-            {scenarioId !== 0 && (
-              <>
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={onRenameScenario}
-                >
-                  Rename
-                </button>
-                <button
-                  type="button"
-                  className="danger"
-                  onClick={onDeleteScenario}
-                >
-                  Delete
-                </button>
-              </>
-            )}
-            <span className="muted">
-              Click a store on the map to see its menu.
-            </span>
-          </div>
+  if (store && onMap) {
+    return (
+      <main className="App sim-view">
+        <div className={`sim-stage ${selectedPlaceId ? "has-menu" : ""}`}>
           <StoreMap
             store={store}
             competitors={competitors.map(({ link, business }) => ({
@@ -362,6 +271,8 @@ function App() {
             radiusKm={job?.radiusKm || radiusKm}
             selectedId={selectedPlaceId}
             onSelect={setSelectedPlaceId}
+            trips={liveTrips}
+            streamId={liveStreamId}
             overlay={
               selectedPlaceId &&
               businessesById.get(selectedPlaceId) && (
@@ -385,98 +296,193 @@ function App() {
               )
             }
           />
-          <Timeline
-            stores={[store, ...competitors.map(({ business }) => business!)]}
-            ownPlaceId={store.placeId}
-            agents={agents}
+          <div className="map-hud-top">
+            <div className="hud-store">
+              <ForkLogo className="hud-logo" />
+              <a href={store.mapsUrl} target="_blank" rel="noreferrer">
+                {store.name}
+              </a>
+              <span className="muted">
+                {store.rating.toFixed(1)}★ · {competitors.length} competitors
+                within {job?.radiusKm || radiusKm} km
+              </span>
+            </div>
+            <div className="scenario-bar">
+              {renaming ? (
+                <form className="scenario-rename" onSubmit={onSaveRename}>
+                  <input
+                    value={draftName}
+                    onChange={(e) => setDraftName(e.target.value)}
+                    onBlur={() => onSaveRename()}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") onCancelRename();
+                    }}
+                    maxLength={60}
+                    aria-label="Scenario name"
+                    autoFocus
+                  />
+                  <button type="submit">Save</button>
+                </form>
+              ) : (
+                <select
+                  value={scenarioId}
+                  onChange={(e) => setScenarioId(Number(e.target.value))}
+                  aria-label="Scenario"
+                >
+                  <option value={0}>Base (real prices)</option>
+                  {scenarios.map((s) => (
+                    <option key={s.scenarioId} value={s.scenarioId}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {scenarioId !== 0 && !renaming && (
+                <button
+                  type="button"
+                  className="secondary edit-name"
+                  aria-label="Edit name"
+                  title="Edit name"
+                  onClick={onStartRename}
+                >
+                  <EditNameIcon />
+                </button>
+              )}
+              <button type="button" onClick={onCreateScenario}>
+                New scenario
+              </button>
+              {scenarioId !== 0 && (
+                <>
+                  <button
+                    type="button"
+                    className={ensemble ? undefined : "secondary"}
+                    aria-pressed={ensemble}
+                    title={
+                      ensemble
+                        ? "5x is on: Play and Day run five independent samples and average them"
+                        : "5x is off: Play and Day run one sample"
+                    }
+                    onClick={onToggleEnsemble}
+                  >
+                    5x
+                  </button>
+                  <button
+                    type="button"
+                    className="danger"
+                    onClick={onDeleteScenario}
+                  >
+                    Delete
+                  </button>
+                </>
+              )}
+            </div>
+            {(requestError || job?.status === "error") && statusBanner}
+          </div>
+          <button
+            type="button"
+            className="map-setup"
+            onClick={goToSetup}
+          >
+            Setup
+          </button>
+          <Assistant
+            store={store}
             scenarioId={scenarioId}
-            scenarioName={
-              scenarios.find((s) => s.scenarioId === scenarioId)?.name ?? "Base"
-            }
-            running={running}
-            jobMessage={job?.message ?? ""}
+            setScenarioId={setScenarioId}
+            ensemble={ensemble}
+            simRef={simRef}
+            onShowMenu={() => setSelectedPlaceId(store.placeId)}
             onError={(error) => setRequestError(errorMessage(error))}
           />
-        </section>
-      )}
+          <div className="map-hud-bottom">
+            <Timeline
+              stores={[store, ...competitors.map(({ business }) => business!)]}
+              ownPlaceId={store.placeId}
+              agents={agents}
+              scenarioId={scenarioId}
+              ensemble={ensemble}
+              scenarioName={
+                scenarios.find((s) => s.scenarioId === scenarioId)?.name ??
+                "Base"
+              }
+              running={running}
+              jobMessage={job?.message ?? ""}
+              radiusKm={job?.radiusKm || radiusKm}
+              onError={(error) => setRequestError(errorMessage(error))}
+              onLiveTrips={onLiveTrips}
+              onDayOpen={() => setSelectedPlaceId(null)}
+              simRef={simRef}
+            />
+          </div>
+        </div>
+      </main>
+    );
+  }
 
-      {store && (
-        <section className="card">
-          <h2>
-            {competitors.length} competitors within {job?.radiusKm} km
-          </h2>
-          {competitors.length === 0 ? (
-            <p className="muted">
-              {running
-                ? "Searching..."
-                : "No drink-focused places found in this radius."}
-            </p>
-          ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>Distance</th>
-                  <th>Name</th>
-                  <th>Category</th>
-                  <th>Rating</th>
-                  <th>Reviews</th>
-                  <th>Loaded</th>
-                  <th>Agents</th>
-                </tr>
-              </thead>
-              <tbody>
-                {competitors.map(({ link, business }) => (
-                  <tr key={link.linkId}>
-                    <td>{formatDistance(link.distanceMeters)}</td>
-                    <td>
-                      <a
-                        href={business!.mapsUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {business!.name}
-                      </a>
-                    </td>
-                    <td>{business!.category}</td>
-                    <td>
-                      {business!.rating ? business!.rating.toFixed(1) : "–"}
-                    </td>
-                    <td>{business!.reviewsCount}</td>
-                    <td>{loadedReviews.get(business!.placeId) ?? 0}</td>
-                    <td>{agentCounts.get(business!.placeId) ?? 0}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </section>
-      )}
-
-      {store && (
-        <MenuSection
-          stores={[store, ...competitors.map(({ business }) => business!)]}
-          ownPlaceId={store.placeId}
-          running={running}
-          onFetch={onFetchMenus}
-        />
-      )}
-
-      {store && (
-        <section className="card controls">
-          <h2>Customer agents</h2>
+  return (
+    <main className="App setup-view">
+      <div className="setup-card">
+        <header>
+          <ForkLogo className="setup-logo" />
+          <h1>Open a cafe</h1>
           <p className="muted">
-            Agents are split by each store&apos;s Google review total, not by
-            how many texts we downloaded. We parse at most 300 reviews across
-            the map, more for bigger shops, then each agent stands for that
-            store&apos;s reviewers / its persona count.
+            Paste a Google Maps link. We load nearby shops, menus, and customer
+            agents from reviews.
           </p>
-          <div className="actions">
-            <label className="field max-field">
+        </header>
+        <form className="controls" onSubmit={onPopulate}>
+          <label className="field">
+            <span>Google Maps link</span>
+            <input
+              type="url"
+              placeholder="https://www.google.com/maps/place/..."
+              value={mapsUrl}
+              onChange={(e) => setMapsUrl(e.target.value)}
+              disabled={running}
+              required
+            />
+          </label>
+          <label className="field">
+            <span>
+              Competitor radius: <strong>{radiusKm.toFixed(1)} km</strong>
+            </span>
+            <input
+              type="range"
+              min={0.1}
+              max={MAX_RADIUS_KM}
+              step={0.1}
+              value={radiusKm}
+              onChange={(e) => setRadiusKm(Number(e.target.value))}
+              disabled={running}
+            />
+          </label>
+          <div className="radius-row">
+            <label className="field grow">
+              <span>Max competitors</span>
+              <input
+                type="number"
+                min={1}
+                max={COMPETITOR_LIMIT}
+                step={1}
+                value={maxCompetitors}
+                onChange={(e) =>
+                  setMaxCompetitors(
+                    Math.min(
+                      COMPETITOR_LIMIT,
+                      Math.max(1, Math.round(Number(e.target.value)) || 1),
+                    ),
+                  )
+                }
+                disabled={running}
+              />
+            </label>
+            <label className="field grow">
               <span>Agents</span>
               <input
                 type="number"
                 min={1}
                 max={200}
+                step={1}
                 value={totalAgents}
                 onChange={(e) =>
                   setTotalAgents(
@@ -489,66 +495,47 @@ function App() {
                 disabled={running}
               />
             </label>
+          </div>
+          {(requestError || running || job?.status === "error") && statusBanner}
+          <div className="actions">
+            <button type="submit" disabled={running || !mapsUrl.trim()}>
+              {running ? "Loading..." : store ? "Reload store" : "Open map"}
+            </button>
+            {store && (
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setOnMap(true)}
+                disabled={running}
+              >
+                Back to map
+              </button>
+            )}
+          </div>
+          {businesses.length > 0 && (
             <button
               type="button"
-              onClick={onCreateAgents}
-              disabled={running || !store}
+              className="setup-clear"
+              onClick={onClear}
+              disabled={running}
             >
-              {running
-                ? "Working..."
-                : agents.length > 0
-                  ? "Recreate agents"
-                  : "Create agents"}
+              Clear saved data
             </button>
-          </div>
-          {agents.length > 0 && (
-            <table>
-              <thead>
-                <tr>
-                  <th>Store</th>
-                  <th>Agent</th>
-                  <th>Typical order</th>
-                  <th>Represents</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...agents]
-                  .sort(
-                    (a, b) =>
-                      storeRank(b.placeId) - storeRank(a.placeId) ||
-                      a.placeId.localeCompare(b.placeId) ||
-                      a.name.localeCompare(b.name),
-                  )
-                  .map((agent) => (
-                    <tr
-                      key={agent.agentId}
-                      className={
-                        agent.placeId === store.placeId
-                          ? "own-store"
-                          : undefined
-                      }
-                    >
-                      <td>{businessesById.get(agent.placeId)?.name ?? "–"}</td>
-                      <td>
-                        <strong>{agent.name}</strong>
-                        <div className="muted">{agent.archetype}</div>
-                      </td>
-                      <td>{agent.typicalOrder}</td>
-                      <td>
-                        ≈{Math.round(agent.representsCustomers)} reviewers
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
           )}
-        </section>
-      )}
-
-      {!store && businessesReady && !running && (
-        <p className="muted empty">No store loaded yet.</p>
-      )}
+        </form>
+      </div>
     </main>
+  );
+}
+
+function EditNameIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M4 20h4.2L18.6 9.6l-4.2-4.2L4 15.8V20zm14.8-12.2 1.6-1.6c.5-.5.5-1.3 0-1.8l-2.4-2.4c-.5-.5-1.3-.5-1.8 0l-1.6 1.6 4.2 4.2z"
+        fill="currentColor"
+      />
+    </svg>
   );
 }
 
