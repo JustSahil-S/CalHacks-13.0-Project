@@ -20,7 +20,15 @@ export const CUSTOMERS = 200;
 // ---- Apify (asynchronous runs) -------------------------------------------------
 
 /** Apify said "too many runs right now" (free plan: 5 concurrent runs, 16 GB). Try again later. */
-class ApifyBusy extends Error {}
+export class ApifyBusy extends Error {}
+
+/** Start (or restart) reading nearby places' delivery menus for a build (see deliverymenus.ts). */
+function queueDeliveryRow(tx: any, buildId: bigint) {
+  const row = { buildId, status: 'queued', detail: 'Queued', searchRunId: '', ddRunId: '', ueRunId: '', stateJson: '' };
+  if (tx.db.deliveryScan.buildId.find(buildId)) tx.db.deliveryScan.buildId.update(row);
+  else tx.db.deliveryScan.insert(row);
+  tx.db.deliveryJob.insert({ scheduledId: 0n, scheduledAt: ScheduleAt.time(tx.timestamp.microsSinceUnixEpoch + 5_000_000n), buildId });
+}
 
 function apify(ctx: ProcCtx, token: string, method: string, path: string, body?: unknown): any {
   const res = ctx.http.fetch(`https://api.apify.com/v2/${path}`, {
@@ -39,20 +47,20 @@ function apify(ctx: ProcCtx, token: string, method: string, path: string, body?:
 
 const RUN_MEMORY_MB = 2048;
 
-function startRun(ctx: ProcCtx, token: string, actor: string, input: unknown): string {
+export function startRun(ctx: ProcCtx, token: string, actor: string, input: unknown): string {
   return apify(ctx, token, 'POST', `acts/${actor}/runs?memory=${RUN_MEMORY_MB}`, input).data.id;
 }
 
-function runStatus(ctx: ProcCtx, token: string, runId: string): { status: string; datasetId: string } {
+export function runStatus(ctx: ProcCtx, token: string, runId: string): { status: string; datasetId: string } {
   const d = apify(ctx, token, 'GET', `actor-runs/${runId}`).data;
   return { status: d.status, datasetId: d.defaultDatasetId };
 }
 
-function datasetItems(ctx: ProcCtx, token: string, datasetId: string, fields: string, limit: number): any[] {
+export function datasetItems(ctx: ProcCtx, token: string, datasetId: string, fields: string, limit: number): any[] {
   return apify(ctx, token, 'GET', `datasets/${datasetId}/items?clean=true&format=json&fields=${fields}&limit=${limit}`);
 }
 
-const stillRunning = (status: string) => status === 'READY' || status === 'RUNNING';
+export const stillRunning = (status: string) => status === 'READY' || status === 'RUNNING';
 
 // ---- Shapes ------------------------------------------------------------------------
 
@@ -349,6 +357,8 @@ export function advanceBuild(ctx: ProcCtx, buildId: bigint) {
         });
         // What the neighbors charge for our items (re-done on every rebuild: the menu may have changed).
         tx.db.rivalPriceJob.insert({ scheduledId: 0n, scheduledAt: ScheduleAt.time(tx.timestamp.microsSinceUnixEpoch), buildId });
+        // Real neighbor menus from DoorDash / Uber Eats (deliverymenus.ts), after the estimates.
+        queueDeliveryRow(tx, buildId);
         // Fetch the real neighborhood for the viewer (skipped if it already exists).
         if (!tx.db.areaMap.buildId.find(buildId)) {
           tx.db.mapJob.insert({ scheduledId: 0n, scheduledAt: ScheduleAt.time(tx.timestamp.microsSinceUnixEpoch), buildId });
@@ -452,6 +462,8 @@ export function advanceRivalScan(ctx: ProcCtx, buildId: bigint) {
       if (cur) tx.db.twinBuild.id.update({ ...cur, competitorsJson: JSON.stringify(places) });
       if (cur && cur.universeId !== 0n) {
         tx.db.rivalPriceJob.insert({ scheduledId: 0n, scheduledAt: ScheduleAt.time(tx.timestamp.microsSinceUnixEpoch), buildId });
+        // Real neighbor menus from DoorDash / Uber Eats (deliverymenus.ts), after the estimates.
+        queueDeliveryRow(tx, buildId);
       }
     });
     set({ status: 'done', detail: `${rivals.length} coffee places within 7 miles` });

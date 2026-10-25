@@ -186,6 +186,24 @@ export const DecisionRequest = __t.object("DecisionRequest", {
 });
 export type DecisionRequest = __Infer<typeof DecisionRequest>;
 
+export const DeliveryJob = __t.object("DeliveryJob", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+  buildId: __t.u64(),
+});
+export type DeliveryJob = __Infer<typeof DeliveryJob>;
+
+export const DeliveryScan = __t.object("DeliveryScan", {
+  buildId: __t.u64(),
+  status: __t.string(),
+  detail: __t.string(),
+  searchRunId: __t.string(),
+  ddRunId: __t.string(),
+  ueRunId: __t.string(),
+  stateJson: __t.string(),
+});
+export type DeliveryScan = __Infer<typeof DeliveryScan>;
+
 export const Event = __t.object("Event", {
   id: __t.u64(),
   universeId: __t.u64(),

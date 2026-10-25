@@ -48,6 +48,7 @@ import RefreshRivalsReducer from "./refresh_rivals_reducer";
 import ResetAllReducer from "./reset_all_reducer";
 import RetryBuildReducer from "./retry_build_reducer";
 import RunUniverseReducer from "./run_universe_reducer";
+import ScanDeliveryMenusReducer from "./scan_delivery_menus_reducer";
 import SetPricesReducer from "./set_prices_reducer";
 import SetRealMenuReducer from "./set_real_menu_reducer";
 import StartClockReducer from "./start_clock_reducer";
@@ -76,6 +77,7 @@ import CompetitorRow from "./competitor_table";
 import DailyMetricRow from "./daily_metric_table";
 import DecisionCacheRow from "./decision_cache_table";
 import DecisionRequestRow from "./decision_request_table";
+import DeliveryScanRow from "./delivery_scan_table";
 import EventRow from "./event_table";
 import ExperimentRow from "./experiment_table";
 import ExperimentRadiusRow from "./experiment_radius_table";
@@ -221,6 +223,17 @@ const tablesSchema = __schema({
       { name: 'decision_request_situation_key_key', constraint: 'unique', columns: ['situationKey'] },
     ],
   }, DecisionRequestRow),
+  deliveryScan: __table({
+    name: 'delivery_scan',
+    indexes: [
+      { accessor: 'buildId', name: 'delivery_scan_build_id_idx_btree', algorithm: 'btree', columns: [
+        'buildId',
+      ] },
+    ],
+    constraints: [
+      { name: 'delivery_scan_build_id_key', constraint: 'unique', columns: ['buildId'] },
+    ],
+  }, DeliveryScanRow),
   event: __table({
     name: 'event',
     indexes: [
@@ -503,6 +516,7 @@ const reducersSchema = __reducers(
   __reducerSchema("reset_all", ResetAllReducer),
   __reducerSchema("retry_build", RetryBuildReducer),
   __reducerSchema("run_universe", RunUniverseReducer),
+  __reducerSchema("scan_delivery_menus", ScanDeliveryMenusReducer),
   __reducerSchema("set_prices", SetPricesReducer),
   __reducerSchema("set_real_menu", SetRealMenuReducer),
   __reducerSchema("start_clock", StartClockReducer),

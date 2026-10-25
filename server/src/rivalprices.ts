@@ -109,10 +109,10 @@ export function priceRivals(ctx: ProcCtx, buildId: bigint): string {
   const items = new Map(menu.map(m => [m.key, m.cents]));
   let n = 0;
   ctx.withTx(tx => {
-    // Keep prices read from real menus; re-estimate the rest.
+    // Keep prices read from real menus (in-store or delivery); re-estimate the rest.
     const read = new Set<string>();
     for (const row of [...tx.db.rivalPrice.buildId.filter(buildId)]) {
-      if (row.source === 'menu') read.add(row.rivalKey);
+      if (row.source !== 'estimated') read.add(row.rivalKey);
       else tx.db.rivalPrice.id.delete(row.id);
     }
     for (const r of res.data.rivals ?? []) {
@@ -156,7 +156,8 @@ export function setRivalMenu(
   buildId: bigint,
   rivalKey: string,
   items: { name: string; price: number }[],
-  sourceUrl: string
+  sourceUrl: string,
+  source: 'menu' | 'delivery' = 'menu'
 ): string {
   const got = ctx.withTx(tx => {
     const b = tx.db.twinBuild.id.find(buildId);
@@ -169,7 +170,7 @@ export function setRivalMenu(
   if (!got) return `error: no café ${buildId} with a nearby place ${rivalKey}`;
   const theirs = items
     .filter(i => i && typeof i.name === 'string' && Number(i.price) > 0)
-    .slice(0, 150)
+    .slice(0, 400)
     .map(i => ({ name: i.name.slice(0, 80), cents: Math.round(Number(i.price) * 100) }));
   if (theirs.length < 3) return 'error: need at least 3 priced items';
   const prompt = [
@@ -182,18 +183,38 @@ export function setRivalMenu(
   ].join('\n');
   const res = callClaude(ctx, prompt, MATCH_SCHEMA, 6000);
   if (!res.ok) return `error: Claude failed: ${res.error}`;
-  const ours = new Set(got.menu.map(m => m.key));
-  const onTheirMenu = new Set(theirs.map(t => t.cents));
-  let n = 0;
-  ctx.withTx(tx => {
-    const rows = (res.data.matches ?? []).filter((m: any) => ours.has(m.ours) && onTheirMenu.has(Math.round(Number(m.cents))));
-    if (!rows.length) return;
-    for (const row of [...tx.db.rivalPrice.buildId.filter(buildId)]) if (row.rivalKey === rivalKey) tx.db.rivalPrice.id.delete(row.id);
-    for (const m of rows) {
-      tx.db.rivalPrice.insert({ id: 0n, buildId, rivalKey, itemKey: m.ours, priceCents: Math.round(Number(m.cents)), source: 'menu' });
-      n++;
-    }
-  });
-  console.info(`real menu for ${got.rival} (build ${buildId}) from ${sourceUrl}: ${n} of our items matched`);
-  return n ? `ok: ${n} of our items matched on ${got.rival}'s menu` : `error: none of our items matched ${got.rival}'s menu`;
+  // Trust names over numbers: take the price from their menu entry Claude named. Only if the name
+  // doesn't match exactly, accept a number that is on their menu (or within 2% of one, or dollars).
+  const norm = (s: string) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const ourKeys = new Set(got.menu.map(m => m.key));
+  const ourByName = new Map(got.menu.map(m => [norm(m.name), m.key]));
+  const theirByName = new Map(theirs.map(t => [norm(t.name), t.cents]));
+  const theirPrices = theirs.map(t => t.cents);
+  const priceOf = (m: any): number | null => {
+    const named = theirByName.get(norm(m.theirs));
+    if (named) return named;
+    let c = Math.round(Number(m.cents));
+    if (!Number.isFinite(c) || c <= 0) return null;
+    if (c < 50 && theirPrices.includes(c * 100)) c *= 100; // dollars given as cents
+    const near = theirPrices.find(p => Math.abs(p - c) <= p * 0.02);
+    return near ?? null;
+  };
+  const raw: any[] = res.data.matches ?? [];
+  const rows = new Map<string, number>();
+  for (const m of raw) {
+    const key = ourKeys.has(m.ours) ? m.ours : ourByName.get(norm(m.ours));
+    const cents = priceOf(m);
+    if (key && cents && !rows.has(key)) rows.set(key, cents);
+  }
+  if (rows.size) {
+    ctx.withTx(tx => {
+      for (const row of [...tx.db.rivalPrice.buildId.filter(buildId)]) if (row.rivalKey === rivalKey) tx.db.rivalPrice.id.delete(row.id);
+      for (const [itemKey, priceCents] of rows) tx.db.rivalPrice.insert({ id: 0n, buildId, rivalKey, itemKey, priceCents, source });
+    });
+  }
+  const n = rows.size;
+  console.info(`real menu for ${got.rival} (build ${buildId}) from ${sourceUrl}: ${theirs.length} items sent, Claude matched ${raw.length}, kept ${n}`);
+  return n
+    ? `ok: ${n} of our items matched on ${got.rival}'s menu`
+    : `error: none of our items matched ${got.rival}'s menu (${theirs.length} items received, ${raw.length} matches proposed)`;
 }

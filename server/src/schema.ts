@@ -526,6 +526,30 @@ export const rivalInfo = table(
   }
 );
 
+// Reading nearby places' menus from DoorDash / Uber Eats: one Google search for their store pages,
+// one run per delivery app for all of them, then matching one place per step.
+export const deliveryScan = table(
+  { name: 'delivery_scan', public: true },
+  {
+    buildId: t.u64().primaryKey(),
+    status: t.string(), // queued | searching | scraping | matching | done | failed
+    detail: t.string(),
+    searchRunId: t.string(),
+    ddRunId: t.string(),
+    ueRunId: t.string(),
+    stateJson: t.string(), // targets, store pages found, menus waiting to be matched
+  }
+);
+
+export const deliveryJob = table(
+  { name: 'delivery_job' },
+  {
+    scheduledId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
+    buildId: t.u64(),
+  }
+);
+
 export const rivalPriceJob = table(
   { name: 'rival_price_job' },
   {
@@ -540,6 +564,8 @@ const spacetimedb = schema(
     rivalPrice,
     rivalPriceJob,
     rivalInfo,
+    deliveryScan,
+    deliveryJob,
     universe,
     cafe,
     menuItem,

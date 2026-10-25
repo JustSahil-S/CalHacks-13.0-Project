@@ -2,7 +2,8 @@
 // the AI brain's caching and prompt in brain.ts.
 import { t, SenderError } from 'spacetimedb/server';
 import { ScheduleAt } from 'spacetimedb';
-import spacetimedb, { buildJob, clockJob, decisionJob, mapJob, profileJob, rivalJob, rivalPriceJob } from './schema';
+import spacetimedb, { buildJob, clockJob, decisionJob, deliveryJob, mapJob, profileJob, rivalJob, rivalPriceJob } from './schema';
+import { advanceDeliveryScan, queueDeliveryScan } from './deliverymenus';
 import { priceRivals, setRivalMenu, syncRivalInfo } from './rivalprices';
 import { fetchAreaMap } from './areamap';
 import { syncCard } from './cards';
@@ -531,6 +532,22 @@ export const set_rival_menu = spacetimedb.procedure(
     }
     if (!/^https?:\/\//.test(sourceUrl)) return 'error: sourceUrl must be the http(s) page the menu was read from';
     return setRivalMenu(ctx, buildId, rivalKey, items, sourceUrl);
+  }
+);
+
+/** Read nearby places' menus from DoorDash / Uber Eats (runs automatically after builds and rival scans). */
+export const scan_delivery_menus = spacetimedb.reducer({ buildId: t.u64() }, (ctx, { buildId }) => {
+  requireAdmin(ctx);
+  queueDeliveryScan(ctx, buildId);
+});
+
+export const delivery_scan_run = spacetimedb.procedure(
+  { onSchedule: deliveryJob },
+  { job: deliveryJob.rowType },
+  t.unit(),
+  (ctx, { job }) => {
+    advanceDeliveryScan(ctx, job.buildId);
+    return {};
   }
 );
 
