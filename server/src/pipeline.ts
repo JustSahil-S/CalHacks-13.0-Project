@@ -739,8 +739,13 @@ function parseHours(hours: { day: string; hours: string }[] | undefined): { open
     const pm = t.pm ?? fallbackPm;
     return (t.h % 12) + (pm ? 12 : 0);
   };
-  const open = to24(times[0], false);
   const close = to24(times[times.length - 1], true);
+  // Google drops AM/PM on the opening time when it matches the closing one ("12 to 8 PM" is noon
+  // to 8 PM, "7 to 11 AM" is morning). Borrow the closing marker; if that would open after closing,
+  // it was AM after all ("10 to 6 PM" never appears; Google writes "10 AM to 6 PM").
+  const last = times[times.length - 1];
+  let open = to24(times[0], last.pm ?? false);
+  if (times[0].pm === null && open >= close) open = to24(times[0], false);
   return close > open ? { open, close } : { open: 7, close: 18 };
 }
 
