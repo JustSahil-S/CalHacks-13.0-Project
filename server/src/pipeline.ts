@@ -170,7 +170,7 @@ export function advanceBuild(ctx: ProcCtx, buildId: bigint) {
       if (!competitorsRunId) {
         competitorsRunId =
           place.location && b.cutoffDate !== SCAN
-            ? startRun(ctx, token!, PLACES_ACTOR, rivalSearchInput(place.location))
+            ? startRivalRuns(ctx, token!, place.location)
             : 'none';
         update({ competitorsRunId });
       }
@@ -203,8 +203,8 @@ export function advanceBuild(ctx: ProcCtx, buildId: bigint) {
       const r = runStatus(ctx, token!, b.reviewsRunId);
       const c =
         b.competitorsRunId && b.competitorsRunId !== 'none'
-          ? runStatus(ctx, token!, b.competitorsRunId)
-          : { status: 'SUCCEEDED', datasetId: '' };
+          ? rivalRunsStatus(ctx, token!, b.competitorsRunId)
+          : { status: 'SUCCEEDED', datasetIds: [] as string[] };
       let ms = ctx.withTx(tx => tx.db.menuSource.buildId.find(buildId));
       if (ms?.status === 'searching') {
         // Search finished? Pick the best menu page (or fall back to Google's menu link / website) and crawl it.
@@ -233,7 +233,7 @@ export function advanceBuild(ctx: ProcCtx, buildId: bigint) {
         .map((x: any) => ({ date: String(x.publishedAtDate).slice(0, 10), stars: x.stars ?? 0, text: x.text ?? '' }))
         .sort((x: Review, y: Review) => x.date.localeCompare(y.date));
       const competitors =
-        c.status === 'SUCCEEDED' && c.datasetId ? datasetItems(ctx, token!, c.datasetId, PLACE_FIELDS, 100) : [];
+        c.status === 'SUCCEEDED' ? rivalPlaces(ctx, token!, c.datasetIds) : [];
 
       if (b.cutoffDate === SCAN) {
         update({
@@ -366,14 +366,37 @@ export function advanceBuild(ctx: ProcCtx, buildId: bigint) {
 
 // ---- Rivals within 7 miles ----------------------------------------------------------------
 
-/** Coffee places within 7 miles; two searches so both "coffee shop" and "cafe" listings come back. */
-function rivalSearchInput(location: { lat: number; lng: number }) {
+/** Coffee places within radiusKm; two search terms so both "coffee shop" and "cafe" listings come back. */
+function rivalSearchInput(location: { lat: number; lng: number }, radiusKm = MAX_RADIUS_M / 1000) {
   return {
     searchStringsArray: ['coffee shop', 'cafe'],
-    customGeolocation: { type: 'Point', coordinates: [location.lng, location.lat], radiusKm: MAX_RADIUS_M / 1000 },
+    customGeolocation: { type: 'Point', coordinates: [location.lng, location.lat], radiusKm },
     maxCrawledPlacesPerSearch: 40,
     language: 'en',
   };
+}
+
+// A 7-mile search keeps Google's first 40 hits, which in a spread-out area can all come from the far
+// side of the circle (Cafe 86 got none within 2.5 miles, not even the café next door). So a second
+// search covers the nearest 2.5 km; the runs are stored together as "wideId,nearId".
+const NEAR_KM = 2.5;
+function startRivalRuns(ctx: ProcCtx, token: string, location: { lat: number; lng: number }): string {
+  const wide = startRun(ctx, token, PLACES_ACTOR, rivalSearchInput(location));
+  const near = startRun(ctx, token, PLACES_ACTOR, rivalSearchInput(location, NEAR_KM));
+  return `${wide},${near}`;
+}
+function rivalRunsStatus(ctx: ProcCtx, token: string, runIds: string): { status: string; datasetIds: string[] } {
+  const runs = runIds.split(',').filter(Boolean).map(id => runStatus(ctx, token, id));
+  const status = runs.some(r => stillRunning(r.status))
+    ? 'RUNNING'
+    : runs.some(r => r.status === 'SUCCEEDED')
+      ? 'SUCCEEDED'
+      : runs[0]?.status ?? 'FAILED';
+  return { status, datasetIds: runs.filter(r => r.status === 'SUCCEEDED' && r.datasetId).map(r => r.datasetId) };
+}
+function rivalPlaces(ctx: ProcCtx, token: string, datasetIds: string[]): any[] {
+  // Nearby results first, so they survive any cap downstream.
+  return [...datasetIds].reverse().flatMap(id => datasetItems(ctx, token, id, PLACE_FIELDS, 100));
 }
 
 /** Re-scrape an existing build's rivals: queued -> running -> done (or failed). */
@@ -400,15 +423,15 @@ export function advanceRivalScan(ctx: ProcCtx, buildId: bigint) {
     const place: Place = JSON.parse(b.placeJson);
     if (!place.location) throw new Error('café has no location');
     if (scan.status === 'queued') {
-      const runId = startRun(ctx, token, PLACES_ACTOR, rivalSearchInput(place.location));
+      const runId = startRivalRuns(ctx, token, place.location);
       set({ status: 'running', runId, detail: 'Finding coffee places within 7 miles' });
       later(10);
       return;
     }
-    const run = runStatus(ctx, token, scan.runId);
+    const run = rivalRunsStatus(ctx, token, scan.runId);
     if (stillRunning(run.status)) return later(10);
     if (run.status !== 'SUCCEEDED') throw new Error(`rival search ${run.status}`);
-    const places = datasetItems(ctx, token, run.datasetId, PLACE_FIELDS, 100);
+    const places = rivalPlaces(ctx, token, run.datasetIds);
     const rivals = rivalsFromPlaces(place, places);
     ctx.withTx(tx => {
       for (const r of tx.db.rival.buildId.filter(buildId)) tx.db.rival.id.delete(r.id);

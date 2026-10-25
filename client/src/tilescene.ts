@@ -400,7 +400,9 @@ export class TileScene {
     const r = mode === 'street' ? this.areaRadius : Math.max(this.areaRadius, this.shownRadiusM * 1.08);
     const sw = this.ll(-r, -r), ne = this.ll(r, r);
     const cam = this.map.cameraForBounds([sw, ne], { padding: 24, bearing: this.bearing, pitch: ISO_PITCH });
-    this.map.easeTo({ center: this.ll(0, 0), zoom: cam?.zoom ?? 14, pitch: ISO_PITCH, bearing: this.bearing, duration: 700 });
+    // The café view stays close enough (>= 14.6) that single buildings, and so the café's own, get colored.
+    const zoom = mode === 'street' ? Math.max(cam?.zoom ?? 14, 14.6) : cam?.zoom ?? 14;
+    this.map.easeTo({ center: this.ll(0, 0), zoom, pitch: ISO_PITCH, bearing: this.bearing, duration: 700 });
   }
 
   /** Rotate a quarter turn; the view stays isometric. */
@@ -497,8 +499,9 @@ function buildingAt(
         if (!inside || area < inside.area) inside = { ring, h, base, area };
         continue;
       }
-      const [cx, cy] = centerLL(ring);
-      const d = Math.hypot((cx - lng) * mPerLng, (cy - lat) * 110540);
+      // Pins often sit just outside their building (a walkway or parking lot in a shopping square):
+      // measure to the nearest wall, not the center, so a long shop row still counts.
+      const d = wallDistanceM(ring, lng, lat, mPerLng);
       if (d < 25 && (!near || d < near.d)) near = { ring, h, base, d };
     }
   }
@@ -523,6 +526,18 @@ function inRingLL(ring: [number, number][], lng: number, lat: number): boolean {
     if (yi > lat !== yj > lat && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside;
   }
   return inside;
+}
+
+function wallDistanceM(ring: [number, number][], lng: number, lat: number, mPerLng: number): number {
+  let best = Infinity;
+  for (let i = 0; i < ring.length - 1; i++) {
+    const ax = (ring[i][0] - lng) * mPerLng, ay = (ring[i][1] - lat) * 110540;
+    const bx = (ring[i + 1][0] - lng) * mPerLng, by = (ring[i + 1][1] - lat) * 110540;
+    const dx = bx - ax, dy = by - ay;
+    const t = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / (dx * dx + dy * dy || 1)));
+    best = Math.min(best, Math.hypot(ax + t * dx, ay + t * dy));
+  }
+  return best;
 }
 
 function centerLL(ring: [number, number][]): [number, number] {

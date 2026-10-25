@@ -42822,7 +42822,7 @@ var Jc = {
 	targets = [];
 	painted = /* @__PURE__ */ new Map();
 	constructor(e) {
-		this.host = e, dl(), getComputedStyle(e).position === "static" && (e.style.position = "relative"), this.map = new Zc.default.Map({
+		this.host = e, fl(), getComputedStyle(e).position === "static" && (e.style.position = "relative"), this.map = new Zc.default.Map({
 			container: e,
 			style: nl,
 			center: [-122.4194, 37.7749],
@@ -43035,7 +43035,7 @@ var Jc = {
 	lastDeclutter = 0;
 	setMap(e) {
 		this.lat0 = e.center.lat, this.lng0 = e.center.lng, this.mPerLng = 111320 * Math.cos(this.lat0 * Math.PI / 180), this.areaRadius = e.radius, this.cafeMarker?.remove(), this.cafeMarker = new Zc.default.Marker({
-			element: ul("cafe", e.cafe.name, ""),
+			element: dl("cafe", e.cafe.name, ""),
 			anchor: "bottom",
 			offset: [0, -34]
 		}).setLngLat(this.ll(e.cafe.x, e.cafe.y)).addTo(this.map), this.map.jumpTo({
@@ -43058,7 +43058,7 @@ var Jc = {
 		for (let e of n) {
 			let t = e.distanceM / 1609, n = t < 1 ? `${t.toFixed(2)} mi` : `${t.toFixed(1)} mi`;
 			this.rivalMarkers.push(new Zc.default.Marker({
-				element: ul("rival", e.name, n),
+				element: dl("rival", e.name, n),
 				anchor: "bottom",
 				offset: [0, -24]
 			}).setLngLat(this.ll(e.x, e.y)).addTo(this.map));
@@ -43088,10 +43088,10 @@ var Jc = {
 			padding: 24,
 			bearing: this.bearing,
 			pitch: $c
-		});
+		}), a = e === "street" ? Math.max(i?.zoom ?? 14, 14.6) : i?.zoom ?? 14;
 		this.map.easeTo({
 			center: this.ll(0, 0),
-			zoom: i?.zoom ?? 14,
+			zoom: a,
 			pitch: $c,
 			bearing: this.bearing,
 			duration: 700
@@ -43181,19 +43181,19 @@ function ol(e, t, n, r) {
 				});
 				continue;
 			}
-			let [u, d] = ll(o), f = Math.hypot((u - t) * r, (d - n) * 110540);
-			f < 25 && (!a || f < a.d) && (a = {
+			let u = ll(o, t, n, r);
+			u < 25 && (!a || u < a.d) && (a = {
 				ring: o,
 				h: c,
 				base: l,
-				d: f
+				d: u
 			});
 		}
 	}
 	return i ?? a;
 }
 function sl(e, t, n, r) {
-	let [i, a] = ll(t), o = t.map(([e, t]) => [i + (e - i) * 1.02, a + (t - a) * 1.02]);
+	let [i, a] = ul(t), o = t.map(([e, t]) => [i + (e - i) * 1.02, a + (t - a) * 1.02]);
 	return {
 		type: "Feature",
 		properties: {
@@ -43215,12 +43215,20 @@ function cl(e, t, n) {
 	}
 	return r;
 }
-function ll(e) {
+function ll(e, t, n, r) {
+	let i = Infinity;
+	for (let a = 0; a < e.length - 1; a++) {
+		let o = (e[a][0] - t) * r, s = (e[a][1] - n) * 110540, c = (e[a + 1][0] - t) * r, l = (e[a + 1][1] - n) * 110540, u = c - o, d = l - s, f = Math.max(0, Math.min(1, -(o * u + s * d) / (u * u + d * d || 1)));
+		i = Math.min(i, Math.hypot(o + f * u, s + f * d));
+	}
+	return i;
+}
+function ul(e) {
 	let t = 0, n = 0;
 	for (let [r, i] of e) t += r, n += i;
 	return [t / e.length, n / e.length];
 }
-function ul(e, t, n) {
+function dl(e, t, n) {
 	let r = document.createElement("div");
 	if (r.className = `fork-pin ${e}`, r.textContent = t, n) {
 		let e = document.createElement("span");
@@ -43228,15 +43236,15 @@ function ul(e, t, n) {
 	}
 	return r;
 }
-function dl() {
+function fl() {
 	if (document.getElementById("fork-maplibre-css")) return;
 	let e = document.createElement("style");
 	e.id = "fork-maplibre-css", e.textContent = `${Qc}
 .maplibregl-ctrl-attrib{font:10px ui-monospace,monospace;background:rgba(243,238,228,.8)!important}`, document.head.appendChild(e);
 }
 // src/sdk.ts
-var fl = 2414, pl = "Sweep · ", ml = 11265, hl = 5, gl = (e) => (Math.max(1, e.rating) / 4.5) ** 3 * Math.exp(-e.distanceM / 1200) * (e.priceIndex < .95 ? 1.15 : e.priceIndex > 1.05 ? .85 : 1);
-function _l(e = {}) {
+var pl = 2414, ml = "Sweep · ", hl = 11265, gl = 5, _l = (e) => (Math.max(1, e.rating) / 4.5) ** 3 * Math.exp(-e.distanceM / 1200) * (e.priceIndex < .95 ? 1.15 : e.priceIndex > 1.05 ? .85 : 1);
+function vl(e = {}) {
 	let t = e.host ?? "wss://maincloud.spacetimedb.com", n = e.db ?? "fork-calhacks", r = `fork-sdk-token:${t}/${n}`, i;
 	try {
 		i = localStorage.getItem(r) ?? void 0;
@@ -43246,7 +43254,7 @@ function _l(e = {}) {
 			try {
 				localStorage.setItem(r, o);
 			} catch {}
-			let s = vl(i, a.toHexString(), t.replace(/^ws/, "http"), n);
+			let s = yl(i, a.toHexString(), t.replace(/^ws/, "http"), n);
 			s.subscribe("base", [
 				"SELECT * FROM build_card",
 				"SELECT * FROM build_owner",
@@ -43260,7 +43268,7 @@ function _l(e = {}) {
 		o(i);
 	});
 }
-function vl(e, t, n, r) {
+function yl(e, t, n, r) {
 	let i = /* @__PURE__ */ new Set(), a = !1, o = () => {
 		a || (a = !0, requestAnimationFrame(() => {
 			a = !1;
@@ -43270,7 +43278,7 @@ function vl(e, t, n, r) {
 	for (let t of Object.values(e.db)) t?.onInsert?.(o), t?.onUpdate?.(o), t?.onDelete?.(o);
 	let s = /* @__PURE__ */ new Map(), c = /* @__PURE__ */ new Map(), l = /* @__PURE__ */ new Set(), u = (e, t) => {
 		l.has(e) || (l.add(e), m.subscribe(e, t).catch(() => l.delete(e)));
-	}, d = (e) => e.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(), f = (t) => [...e.db.universe.iter()].filter((e) => e.experimentId === t), p = (e) => e.startsWith(pl), m = {
+	}, d = (e) => e.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(), f = (t) => [...e.db.universe.iter()].filter((e) => e.experimentId === t), p = (e) => e.startsWith(ml), m = {
 		conn: e,
 		identity: t,
 		onChange(e) {
@@ -43383,7 +43391,7 @@ function vl(e, t, n, r) {
 				distanceM: e.distanceM,
 				rating: e.rating,
 				priceIndex: e.priceIndex,
-				weight: gl(e)
+				weight: _l(e)
 			})).sort((e, t) => e.distanceM - t.distanceM);
 		},
 		experiments(t) {
@@ -43462,7 +43470,7 @@ function vl(e, t, n, r) {
 			let n = m.menu(t.rootUniverseId).find((e) => e.key === t.itemKey)?.name ?? t.itemKey, r = t.radiusM ?? 2414, i = r / 1609.34, a = [...new Set(t.pricesCents)].sort((e, t) => e - t);
 			return !a.length || a.some((e) => !Number.isInteger(e) || e < 25 || e > 1e5) ? Promise.reject(/* @__PURE__ */ Error("runSweep: prices are whole cents from 25 to 100000 (e.g. 650 for $6.50)")) : e.reducers.startExperimentR({
 				baseUniverseId: t.rootUniverseId,
-				label: `${pl}${n} · ${i < 1 ? i.toFixed(2) : i.toFixed(1)} mi`,
+				label: `${ml}${n} · ${i < 1 ? i.toFixed(2) : i.toFixed(1)} mi`,
 				optionsJson: JSON.stringify([{
 					label: "no change",
 					prices: {}
@@ -43571,7 +43579,7 @@ function vl(e, t, n, r) {
 	};
 	return m;
 }
-var yl = class {
+var bl = class {
 	fork;
 	scene;
 	hood = null;
@@ -43585,11 +43593,11 @@ var yl = class {
 	showCall = 0;
 	playing = !1;
 	speed = 1;
-	radiusM = fl;
+	radiusM = pl;
 	onDay = () => {};
 	onPick = () => {};
 	constructor(e, t) {
-		this.fork = t, bl(), this.scene = new rl(e), this.scene.onFrame = (e) => this.tick(e), this.scene.onPick = (e) => {
+		this.fork = t, xl(), this.scene = new rl(e), this.scene.onFrame = (e) => this.tick(e), this.scene.onPick = (e) => {
 			this.selected = e, this.onPick(e === null ? null : this.customer(e));
 		}, t.onChange(() => this.dirty = !0);
 	}
@@ -43653,7 +43661,7 @@ var yl = class {
 		if (!this.crowd || !t) return;
 		let n = t.forkTick + 1, r = t.currentTick;
 		if (r < n) return;
-		if (this.playing && (this.dayFloat += e * this.speed / hl), this.dayFloat >= r + 1 && (this.dayFloat = this.playing ? n : r + .999), this.dayFloat < n && (this.dayFloat = n), this.dirty) {
+		if (this.playing && (this.dayFloat += e * this.speed / gl), this.dayFloat >= r + 1 && (this.dayFloat = this.playing ? n : r + .999), this.dayFloat < n && (this.dayFloat = n), this.dirty) {
 			this.dirty = !1;
 			let e = this.fork.conn.db;
 			this.crowd.setVisits([...e.visit.iter()].filter((e) => e.universeId === t.id)), this.crowd.setNotices([...e.event.iter()].filter((e) => e.universeId === t.id && e.kind === "notice_price"));
@@ -43693,9 +43701,9 @@ var yl = class {
 		};
 	}
 };
-function bl() {
+function xl() {
 	if (document.getElementById("fork-sdk-styles")) return;
 	let e = document.createElement("style");
 	e.id = "fork-sdk-styles", e.textContent = "\n.fork-pin{position:absolute;pointer-events:none;transform:translate(-50%,-100%);font:600 11px ui-monospace,'IBM Plex Mono',monospace;letter-spacing:.06em;text-transform:uppercase;padding:4px 8px;border-radius:4px;color:#fff;white-space:nowrap;z-index:3}\n.fork-pin.cafe{background:#d9472b}.fork-pin.rival{background:#1f6f6b}.fork-pin span{opacity:.8;font-weight:400;margin-left:6px}", document.head.appendChild(e);
 }
-export { fl as DEFAULT_RADIUS_M, yl as ForkMap, ml as MAX_RADIUS_M, pl as SWEEP_PREFIX, _l as connectFork, gl as pull };
+export { pl as DEFAULT_RADIUS_M, bl as ForkMap, hl as MAX_RADIUS_M, ml as SWEEP_PREFIX, vl as connectFork, _l as pull };
