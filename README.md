@@ -58,13 +58,16 @@ it reproduces exactly the odds they started with. A price change works through:
 - **the dollars:** a lasting change in how much they like coming;
 - **the shock** against what they're used to paying: it fades as they keep coming (their anchor
   moves 15% toward the new price per visit), and a rise hurts more than an equal cut pleases;
+- **a ceiling:** every customer has a largest rise on an item they'll put up with, from +15% for
+  the most price-sensitive to +75% for the least; past it, the extra rise counts six times as
+  hard, so a silly increase loses money instead of looking like free profit;
 - **habit:** a few days away make staying away stick, coming back rebuilds it;
 - **Claude:** when someone first sees a new price, Claude reads their profile, memories and the
   alternatives nearby and estimates how often they'll keep coming; the model moves halfway (on a
   log scale) toward that estimate, and the nudge fades over a few weeks.
 
-On the first day of a rise, dollars + shock move each customer exactly as much as the simpler
-rule Fork was first backtested with, at any size of rise. Draws are exact random-utility draws
+On the first day of a rise below a customer's ceiling, dollars + shock move them exactly as much
+as the simpler rule Fork was first backtested with. Draws are exact random-utility draws
 shared by copy *k* of every option, so a price change can only move people who would otherwise
 have come here: the futures differ because of the price, not luck. The original odds system is
 still available as `ai-odds` / `rules-odds` for comparison.

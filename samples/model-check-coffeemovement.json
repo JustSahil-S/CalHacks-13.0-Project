@@ -1,0 +1,5 @@
+[
+  { "label": "Latte +10% (before ceiling)", "brain": "rules", "prices": { "latte": 660 }, "copies": 10, "days": 60 },
+  { "label": "Latte +15% (before ceiling)", "brain": "rules", "prices": { "latte": 690 }, "copies": 10, "days": 60 },
+  { "label": "Latte +143% (before ceiling)", "brain": "rules", "prices": { "latte": 1460 }, "copies": 10, "days": 60 }
+]

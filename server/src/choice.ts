@@ -28,6 +28,12 @@ const MOOD_RECOVERY = 0.97; // a bad experience fades by 3% a day away
 const SHIFT_HALF_LIFE = 21; // days for Claude's nudge to halve
 export const KNOWN_PLACES = 3;
 const MIN_SHARE = 0.002;
+// Each customer's ceiling: the largest rise on an item of their usual order they'll put up with,
+// from +15% (very price-sensitive) to +75% (doesn't think about price). Past it, every extra point
+// pushes them away hard, so demand can fall to zero and profit has a real peak. Rises of 15% or
+// less are never affected. CEIL_W = 0 switches it off.
+const CEIL_W = 6;
+export const ceilingFor = (priceSensitivity: number) => 0.15 + 0.6 * (1 - clamp(priceSensitivity, 0, 1));
 
 const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
 
@@ -111,6 +117,7 @@ export interface DayIn {
   satisfaction: number;
   seenPriceCents: number; // the price they believe it is now (what they saw last time)
   ease: number; // rivals.ts switchingEase: how easy leaving is given the rivals in range
+  overCeiling?: number; // how far the largest item rise they've seen is past their ceiling (0 = within it)
   places: Place[]; // the places they know that are in range (weights)
   state: ChoiceState;
 }
@@ -226,7 +233,8 @@ export function dayOdds(d: DayIn): DayOdds {
   }
   const shift = d.state.shift * Math.pow(0.5, Math.max(0, d.tick - d.state.shiftTick) / SHIFT_HALF_LIFE);
 
-  const vHere = c.vHere0 + price + habitHere + mood + shift;
+  const ceiling = -CEIL_W * Math.max(0, d.overCeiling ?? 0);
+  const vHere = c.vHere0 + price + ceiling + habitHere + mood + shift;
   const vPlaces = c.vPlaces0.map(v => v + habitOut);
 
   // Nested logit: P(out) = e^IV / (e^IV + 1), P(here | out) = e^(V/mu) / sum e^(V/mu).

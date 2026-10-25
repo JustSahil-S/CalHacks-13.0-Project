@@ -156,6 +156,8 @@ function launchExperiment(
   if (!isAdmin(ctx)) {
     // Public demo limits: keep Claude spend small and the shared database responsive.
     if (a.copies > 10 || a.days > 90) throw new SenderError('Demo limit: up to 10 copies and 90 days.');
+    // A price search runs several prices at once: keep it to 7 prices plus no change, 80 futures.
+    if (options.length > 8 || options.length * a.copies > 80) throw new SenderError('Demo limit: up to 7 prices and 80 futures per run.');
     if ([...ctx.db.experiment.iter()].some(e => e.status === 'running')) {
       throw new SenderError('Another simulation is running. Try again in a minute.');
     }

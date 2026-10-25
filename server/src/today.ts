@@ -1,7 +1,7 @@
 // Everything needed to decide where each customer goes on one day of one universe. The day loop
 // (sim.ts) and the Claude prefetch (brain.ts) both build their inputs here, so they always agree on
 // who walks in.
-import { baselineOdds, initialState, knownPlaces, orderPrice, type ChoiceState, type DayIn, type Place } from './choice';
+import { baselineOdds, ceilingFor, initialState, knownPlaces, orderPrice, type ChoiceState, type DayIn, type Place } from './choice';
 import { rivalSet, switchingEase } from './rivals';
 import type { Ctx } from './sim';
 
@@ -87,6 +87,17 @@ export function prepareDay(ctx: Ctx, universeId: bigint, tick: number): Today | 
       return s;
     },
     input(a, state, day = tick) {
+      // The largest rise on an item of their usual order, once they've seen the new prices.
+      let overCeiling = 0;
+      if (a.refPriceCents !== orderPrice(basePrices, a.usualOrder)) {
+        let maxRise = 0;
+        for (const k of JSON.parse(a.usualOrder) as string[]) {
+          const before = basePrices.get(k) ?? 0;
+          const now = prices.get(k) ?? before;
+          if (before > 0) maxRise = Math.max(maxRise, (now - before) / before);
+        }
+        overCeiling = Math.max(0, maxRise - ceilingFor(a.priceSensitivity));
+      }
       return {
         tick: day,
         base: baselineOdds(a.visitsPerWeek, a.loyalty),
@@ -94,6 +105,7 @@ export function prepareDay(ctx: Ctx, universeId: bigint, tick: number): Today | 
         satisfaction: a.satisfaction,
         seenPriceCents: a.refPriceCents,
         ease,
+        overCeiling,
         places: knownPlaces(a.key, all, placesSig)
           .map(k => byKey.get(k))
           .filter((p): p is Place => !!p),

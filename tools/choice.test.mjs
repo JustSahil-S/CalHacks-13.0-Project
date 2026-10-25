@@ -12,7 +12,7 @@ for (const f of ['choice.ts', 'rng.ts']) {
   const code = await readFile(new URL(`../server/src/${f}`, import.meta.url), 'utf8');
   await writeFile(join(dir, f), code.replace("from './rng';", "from './rng.ts';"));
 }
-const { afterDay, baselineOdds, choose, dayOdds, initialState, knownPlaces, withClaude } = await import(pathToFileURL(join(dir, 'choice.ts')).href);
+const { afterDay, baselineOdds, ceilingFor, choose, dayOdds, initialState, knownPlaces, withClaude } = await import(pathToFileURL(join(dir, 'choice.ts')).href);
 
 let failed = 0;
 const check = (name, fn) => {
@@ -183,6 +183,42 @@ check('each person knows 3 places, the same every time, favouring strong ones', 
   let hasStrong = 0;
   for (let i = 0; i < 200; i++) if (knownPlaces(`c${i}`, many).includes('r0')) hasStrong++;
   assert.ok(hasStrong > 150, `strong place known by ${hasStrong}/200`);
+});
+
+console.log("each customer's price ceiling");
+const over = (pct, ps) => Math.max(0, pct - ceilingFor(ps));
+check('rises of 15% or less are untouched, for everyone', () => {
+  for (const p of people) for (const pct of [0.01, 0.05, 0.09, 0.12, 0.15]) {
+    const d = dayIn(p, { seenPriceCents: 550 * (1 + pct) });
+    assert.equal(dayOdds({ ...d, overCeiling: over(pct, p.ps) }).pHere, dayOdds(d).pHere, `${p.name} +${pct * 100}%`);
+  }
+});
+check('a huge rise drives visits toward zero (no floor any more)', () => {
+  for (const p of people) {
+    const base = dayOdds(dayIn(p)).pHere;
+    const d = dayIn(p, { seenPriceCents: 550 * 4 });
+    const got = dayOdds({ ...d, overCeiling: over(3, p.ps) }).pHere;
+    assert.ok(got < base * 0.05, `${p.name}: ${got.toFixed(4)} vs ${base.toFixed(4)}`);
+  }
+});
+check("long run (used to the new price): revenue peaks at a finite price, then collapses", () => {
+  for (const p of people) {
+    let bestPct = 0, bestRev = 0, lastRev = 0;
+    for (let pct = 0; pct <= 3; pct += 0.05) {
+      const seen = 550 * (1 + pct);
+      const st = { ...initialState(baselineOdds(p.v, p.loyalty), 550, 9), anchorCents: seen };
+      const rev = (seen / 100) * dayOdds({ ...dayIn(p, { seenPriceCents: seen, state: st }), overCeiling: over(pct, p.ps) }).pHere;
+      if (rev > bestRev) [bestRev, bestPct] = [rev, pct];
+      lastRev = rev;
+    }
+    assert.ok(bestPct < 2, `${p.name}: peak at +${(bestPct * 100).toFixed(0)}%`);
+    assert.ok(lastRev < bestRev * 0.3, `${p.name}: +300% keeps ${((lastRev / bestRev) * 100).toFixed(0)}% of peak revenue`);
+  }
+});
+check('price-hawks have a lower ceiling than the unbothered', () => {
+  assert.ok(ceilingFor(0.95) < ceilingFor(0.2));
+  assert.equal(+ceilingFor(1).toFixed(3), 0.15);
+  assert.equal(+ceilingFor(0).toFixed(3), 0.75);
 });
 
 console.log('numerics');
