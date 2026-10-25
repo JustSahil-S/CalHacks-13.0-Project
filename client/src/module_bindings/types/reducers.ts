@@ -29,6 +29,7 @@ import StartReviewScanReducer from "../start_review_scan_reducer";
 import StartTwinBuildReducer from "../start_twin_build_reducer";
 import StopClockReducer from "../stop_clock_reducer";
 import SyncCardsReducer from "../sync_cards_reducer";
+import SyncRivalInfoReducer from "../sync_rival_info_reducer";
 
 export type AddCafeParams = __Infer<typeof AddCafeReducer>;
 export type ClaimAdminParams = __Infer<typeof ClaimAdminReducer>;
@@ -53,4 +54,5 @@ export type StartReviewScanParams = __Infer<typeof StartReviewScanReducer>;
 export type StartTwinBuildParams = __Infer<typeof StartTwinBuildReducer>;
 export type StopClockParams = __Infer<typeof StopClockReducer>;
 export type SyncCardsParams = __Infer<typeof SyncCardsReducer>;
+export type SyncRivalInfoParams = __Infer<typeof SyncRivalInfoReducer>;
 

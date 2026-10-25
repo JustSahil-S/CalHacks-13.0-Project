@@ -46,7 +46,15 @@ export interface Fork {
    * price level and city), by our item key. avgCents is the plain average over the places listed.
    * Customers compare a rise against this. Loads lazily: empty on the first call, then onChange fires.
    */
-  marketPrices(buildId: bigint): Map<string, { avgCents: number; places: { key: string; name: string; distanceM: number; cents: number }[] }>;
+  marketPrices(buildId: bigint): Map<string, { avgCents: number; readShare: number; places: { key: string; name: string; distanceM: number; cents: number; source: 'menu' | 'estimated' }[] }>;
+  /**
+   * The nearby places worth reading real menus from (Mana's browser): the `limit` nearest
+   * independents within `radiusM` (chains are skipped: their prices are well known), with where to
+   * look online and whether their real menu has already been read. Loads lazily like marketPrices.
+   */
+  menuReadTargets(buildId: bigint, limit?: number, radiusM?: number): { key: string; name: string; distanceM: number; address: string; website: string; menuUrl: string; mapsUrl: string; read: boolean }[];
+  /** Hand a nearby place's real menu (items [{ name, price }] in dollars) to the engine. Needs the menu-reader (partner) identity. Resolves "ok: ..." or "error: ...". */
+  setRivalMenu(buildId: bigint, rivalKey: string, items: { name: string; price: number }[], sourceUrl: string): Promise<string>;
   experiments(rootUniverseId: bigint): { id: bigint; label: string; status: string; copies: number; days: number; radiusM: number; kind: 'single' | 'sweep' }[];
   results(experimentId: bigint): ExperimentSummary | null;
   /** Daily revenue per copy per option (for band charts). Needs watchExperiment(). */
@@ -327,18 +335,42 @@ function makeFork(conn: DbConnection, identity: string, httpHost: string, dbName
     marketPrices(buildId) {
       lazy(`rprice:${buildId}`, [`SELECT * FROM rival_price WHERE build_id = ${buildId}`]);
       const rv = new Map([...conn.db.rival.iter()].filter(r => r.buildId === buildId).map(r => [r.key, r]));
-      const out = new Map<string, { avgCents: number; places: { key: string; name: string; distanceM: number; cents: number }[] }>();
+      type Place = { key: string; name: string; distanceM: number; cents: number; source: 'menu' | 'estimated' };
+      const out = new Map<string, { avgCents: number; readShare: number; places: Place[] }>();
       for (const p of conn.db.rivalPrice.iter()) {
         if (p.buildId !== buildId) continue;
         const r = rv.get(p.rivalKey);
-        if (!out.has(p.itemKey)) out.set(p.itemKey, { avgCents: 0, places: [] });
-        out.get(p.itemKey)!.places.push({ key: p.rivalKey, name: r?.name ?? p.rivalKey, distanceM: r?.distanceM ?? 0, cents: p.priceCents });
+        if (!out.has(p.itemKey)) out.set(p.itemKey, { avgCents: 0, readShare: 0, places: [] });
+        out.get(p.itemKey)!.places.push({
+          key: p.rivalKey,
+          name: r?.name ?? p.rivalKey,
+          distanceM: r?.distanceM ?? 0,
+          cents: p.priceCents,
+          source: p.source === 'menu' ? 'menu' : 'estimated',
+        });
       }
       for (const v of out.values()) {
         v.places.sort((a, b) => a.distanceM - b.distanceM);
         v.avgCents = Math.round(v.places.reduce((s, x) => s + x.cents, 0) / v.places.length);
+        v.readShare = v.places.filter(x => x.source === 'menu').length / v.places.length;
       }
       return out;
+    },
+    menuReadTargets(buildId, limit = 5, radiusM = DEFAULT_RADIUS_M) {
+      lazy(`rinfo:${buildId}`, [`SELECT * FROM rival_info WHERE build_id = ${buildId}`, `SELECT * FROM rival_price WHERE build_id = ${buildId}`]);
+      const info = new Map([...conn.db.rivalInfo.iter()].filter(i => i.buildId === buildId).map(i => [i.rivalKey, i]));
+      const read = new Set([...conn.db.rivalPrice.iter()].filter(p => p.buildId === buildId && p.source === 'menu').map(p => p.rivalKey));
+      return [...conn.db.rival.iter()]
+        .filter(r => r.buildId === buildId && r.distanceM <= radiusM && info.has(r.key) && !info.get(r.key)!.isChain)
+        .sort((a, b) => a.distanceM - b.distanceM)
+        .slice(0, limit)
+        .map(r => {
+          const i = info.get(r.key)!;
+          return { key: r.key, name: r.name, distanceM: r.distanceM, address: i.address, website: i.website, menuUrl: i.menuUrl, mapsUrl: i.mapsUrl, read: read.has(r.key) };
+        });
+    },
+    setRivalMenu(buildId, rivalKey, items, sourceUrl) {
+      return conn.procedures.setRivalMenu({ buildId, rivalKey, itemsJson: JSON.stringify(items), sourceUrl });
     },
     rivals(buildId) {
       return [...conn.db.rival.iter()]

@@ -511,6 +511,21 @@ export const rivalPrice = table(
   }
 );
 
+// Where to find each nearby place online (for Mana's browser to read its real menu).
+export const rivalInfo = table(
+  { name: 'rival_info', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    buildId: t.u64().index('btree'),
+    rivalKey: t.string(),
+    address: t.string(),
+    website: t.string(),
+    menuUrl: t.string(),
+    mapsUrl: t.string(),
+    isChain: t.bool(),
+  }
+);
+
 export const rivalPriceJob = table(
   { name: 'rival_price_job' },
   {
@@ -524,6 +539,7 @@ const spacetimedb = schema(
   {
     rivalPrice,
     rivalPriceJob,
+    rivalInfo,
     universe,
     cafe,
     menuItem,

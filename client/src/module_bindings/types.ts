@@ -324,6 +324,18 @@ export const Rival = __t.object("Rival", {
 });
 export type Rival = __Infer<typeof Rival>;
 
+export const RivalInfo = __t.object("RivalInfo", {
+  id: __t.u64(),
+  buildId: __t.u64(),
+  rivalKey: __t.string(),
+  address: __t.string(),
+  website: __t.string(),
+  menuUrl: __t.string(),
+  mapsUrl: __t.string(),
+  isChain: __t.bool(),
+});
+export type RivalInfo = __Infer<typeof RivalInfo>;
+
 export const RivalJob = __t.object("RivalJob", {
   scheduledId: __t.u64(),
   scheduledAt: __t.scheduleAt(),

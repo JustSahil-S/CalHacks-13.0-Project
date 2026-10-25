@@ -3,7 +3,7 @@
 import { t, SenderError } from 'spacetimedb/server';
 import { ScheduleAt } from 'spacetimedb';
 import spacetimedb, { buildJob, clockJob, decisionJob, mapJob, profileJob, rivalJob, rivalPriceJob } from './schema';
-import { priceRivals } from './rivalprices';
+import { priceRivals, setRivalMenu, syncRivalInfo } from './rivalprices';
 import { fetchAreaMap } from './areamap';
 import { syncCard } from './cards';
 import { usesClaude } from './today';
@@ -511,6 +511,34 @@ export const price_rivals_run = spacetimedb.procedure(
     return {};
   }
 );
+
+/**
+ * Builder (the Mana menu reader): a nearby place's real menu. items: [{ name, price }] with price in
+ * dollars. Returns "ok: ..." or "error: ...". Its prices replace that place's estimates.
+ */
+export const set_rival_menu = spacetimedb.procedure(
+  { buildId: t.u64(), rivalKey: t.string(), itemsJson: t.string(), sourceUrl: t.string() },
+  t.string(),
+  (ctx, { buildId, rivalKey, itemsJson, sourceUrl }) => {
+    const ok = ctx.withTx(tx => tx.db.admin.identity.find(ctx.sender) !== null || tx.db.partner.identity.find(ctx.sender) !== null);
+    if (!ok) return 'error: only the Fork team (or its Mana menu reader) can do that';
+    let items: { name: string; price: number }[];
+    try {
+      items = JSON.parse(itemsJson);
+      if (!Array.isArray(items)) throw new Error('not a list');
+    } catch {
+      return 'error: itemsJson must be a JSON list of { name, price }';
+    }
+    if (!/^https?:\/\//.test(sourceUrl)) return 'error: sourceUrl must be the http(s) page the menu was read from';
+    return setRivalMenu(ctx, buildId, rivalKey, items, sourceUrl);
+  }
+);
+
+/** Fill rival_info (addresses, websites) for a café without re-pricing. */
+export const sync_rival_info = spacetimedb.reducer({ buildId: t.u64() }, (ctx, { buildId }) => {
+  requireAdmin(ctx);
+  syncRivalInfo(ctx, buildId);
+});
 
 export const refresh_rivals = spacetimedb.reducer({ buildId: t.u64() }, (ctx, { buildId }) => {
   requireAdmin(ctx);

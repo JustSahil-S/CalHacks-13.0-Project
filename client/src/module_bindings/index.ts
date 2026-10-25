@@ -57,10 +57,12 @@ import StartReviewScanReducer from "./start_review_scan_reducer";
 import StartTwinBuildReducer from "./start_twin_build_reducer";
 import StopClockReducer from "./stop_clock_reducer";
 import SyncCardsReducer from "./sync_cards_reducer";
+import SyncRivalInfoReducer from "./sync_rival_info_reducer";
 
 // Import all procedure arg schemas
 import * as InspectMenuCrawlProcedure from "./inspect_menu_crawl_procedure";
 import * as InspectMenuSearchProcedure from "./inspect_menu_search_procedure";
+import * as SetRivalMenuProcedure from "./set_rival_menu_procedure";
 import * as TestMenuReadProcedure from "./test_menu_read_procedure";
 
 // Import all table schema definitions
@@ -85,6 +87,7 @@ import MenuSourceRow from "./menu_source_table";
 import PartnerRow from "./partner_table";
 import ReviewRow from "./review_table";
 import RivalRow from "./rival_table";
+import RivalInfoRow from "./rival_info_table";
 import RivalPriceRow from "./rival_price_table";
 import RivalScanRow from "./rival_scan_table";
 import RivalTallyRow from "./rival_tally_table";
@@ -357,6 +360,20 @@ const tablesSchema = __schema({
       { name: 'rival_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, RivalRow),
+  rivalInfo: __table({
+    name: 'rival_info',
+    indexes: [
+      { accessor: 'buildId', name: 'rival_info_build_id_idx_btree', algorithm: 'btree', columns: [
+        'buildId',
+      ] },
+      { accessor: 'id', name: 'rival_info_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'rival_info_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, RivalInfoRow),
   rivalPrice: __table({
     name: 'rival_price',
     indexes: [
@@ -495,12 +512,14 @@ const reducersSchema = __reducers(
   __reducerSchema("start_twin_build", StartTwinBuildReducer),
   __reducerSchema("stop_clock", StopClockReducer),
   __reducerSchema("sync_cards", SyncCardsReducer),
+  __reducerSchema("sync_rival_info", SyncRivalInfoReducer),
 );
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */
 const proceduresSchema = __procedures(
   __procedureSchema("inspect_menu_crawl", InspectMenuCrawlProcedure.params, InspectMenuCrawlProcedure.returnType),
   __procedureSchema("inspect_menu_search", InspectMenuSearchProcedure.params, InspectMenuSearchProcedure.returnType),
+  __procedureSchema("set_rival_menu", SetRivalMenuProcedure.params, SetRivalMenuProcedure.returnType),
   __procedureSchema("test_menu_read", TestMenuReadProcedure.params, TestMenuReadProcedure.returnType),
 );
 

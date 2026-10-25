@@ -4,6 +4,37 @@
 // judge a rise against the neighborhood, not just against what they paid before (choice.ts risePct).
 import { callClaude, type ProcCtx } from './claude';
 import { pull } from './rivals';
+import type { Ctx } from './sim';
+
+// Big chains publish one national menu (or none per store); their prices are well known, so their
+// estimates are already good and Mana's reads go to the independents, where estimates are guesses.
+const CHAINS = /starbucks|peet'?s|philz|dunkin|mcdonald|mccaf|tim hortons|blue bottle|coffee bean|caribou|dutch bros|panera|7-eleven|krispy kreme|boba guys|tastea|sharetea|gong cha|kung fu tea|teaspoon|quickly/i;
+export const isChain = (name: string) => CHAINS.test(name);
+
+/** Fill rival_info (address, website, menu link) from the stored Google Maps results. */
+export function syncRivalInfo(tx: Ctx, buildId: bigint) {
+  const b = tx.db.twinBuild.id.find(buildId);
+  if (!b) return;
+  const names = new Map([...tx.db.rival.buildId.filter(buildId)].map(r => [r.key, r.name]));
+  for (const row of [...tx.db.rivalInfo.buildId.filter(buildId)]) tx.db.rivalInfo.id.delete(row.id);
+  for (const p of JSON.parse(b.competitorsJson || '[]')) {
+    if (!p?.placeId) continue;
+    const key = `r_${String(p.placeId).slice(-10)}`;
+    const name = names.get(key);
+    if (name === undefined) continue;
+    names.delete(key); // once per rival
+    tx.db.rivalInfo.insert({
+      id: 0n,
+      buildId,
+      rivalKey: key,
+      address: String(p.address ?? ''),
+      website: String(p.website ?? ''),
+      menuUrl: String(p.menu ?? ''),
+      mapsUrl: String(p.url ?? ''),
+      isChain: isChain(name),
+    });
+  }
+}
 
 const MAX_RIVALS = 12; // the places customers most likely know (knownPlaces draws by pull)
 
@@ -41,6 +72,7 @@ export function priceRivals(ctx: ProcCtx, buildId: bigint): string {
   const got = ctx.withTx(tx => {
     const b = tx.db.twinBuild.id.find(buildId);
     if (!b || b.universeId === 0n) return null;
+    syncRivalInfo(tx as unknown as Ctx, buildId);
     const menu = [...tx.db.menuItem.universeId.filter(b.universeId)].map(m => ({ key: m.key, name: m.name, cents: m.priceCents }));
     const rivals = [...tx.db.rival.buildId.filter(buildId)]
       .map(r => ({ r, w: pull(r) }))
@@ -77,9 +109,14 @@ export function priceRivals(ctx: ProcCtx, buildId: bigint): string {
   const items = new Map(menu.map(m => [m.key, m.cents]));
   let n = 0;
   ctx.withTx(tx => {
-    for (const row of tx.db.rivalPrice.buildId.filter(buildId)) tx.db.rivalPrice.id.delete(row.id);
+    // Keep prices read from real menus; re-estimate the rest.
+    const read = new Set<string>();
+    for (const row of [...tx.db.rivalPrice.buildId.filter(buildId)]) {
+      if (row.source === 'menu') read.add(row.rivalKey);
+      else tx.db.rivalPrice.id.delete(row.id);
+    }
     for (const r of res.data.rivals ?? []) {
-      if (!keys.has(r.key)) continue;
+      if (!keys.has(r.key) || read.has(r.key)) continue;
       for (const it of r.items ?? []) {
         const ours = items.get(it.item);
         const cents = Math.round(Number(it.cents));
@@ -91,4 +128,72 @@ export function priceRivals(ctx: ProcCtx, buildId: bigint): string {
     }
   });
   return `${n} prices for ${rivals.length} nearby places`;
+}
+
+const MATCH_SCHEMA = {
+  type: 'object',
+  properties: {
+    matches: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { ours: { type: 'string' }, cents: { type: 'integer' }, theirs: { type: 'string' } },
+        required: ['ours', 'cents', 'theirs'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['matches'],
+  additionalProperties: false,
+};
+
+/**
+ * A nearby place's real menu (read by Mana's browser): match its items to ours with Claude and store
+ * those prices as read ("menu"), replacing that place's estimates.
+ */
+export function setRivalMenu(
+  ctx: ProcCtx,
+  buildId: bigint,
+  rivalKey: string,
+  items: { name: string; price: number }[],
+  sourceUrl: string
+): string {
+  const got = ctx.withTx(tx => {
+    const b = tx.db.twinBuild.id.find(buildId);
+    if (!b || b.universeId === 0n) return null;
+    const rival = [...tx.db.rival.buildId.filter(buildId)].find(r => r.key === rivalKey);
+    if (!rival) return null;
+    const menu = [...tx.db.menuItem.universeId.filter(b.universeId)].map(m => ({ key: m.key, name: m.name, cents: m.priceCents }));
+    return { rival: rival.name, menu };
+  });
+  if (!got) return `error: no café ${buildId} with a nearby place ${rivalKey}`;
+  const theirs = items
+    .filter(i => i && typeof i.name === 'string' && Number(i.price) > 0)
+    .slice(0, 150)
+    .map(i => ({ name: i.name.slice(0, 80), cents: Math.round(Number(i.price) * 100) }));
+  if (theirs.length < 3) return 'error: need at least 3 priced items';
+  const prompt = [
+    `Below is our café menu (keys, names, our prices in cents) and the real menu of ${got.rival}, a nearby coffee place.`,
+    'For each of OUR items, find the closest equivalent on THEIR menu (same drink or food, regular size) and give',
+    "their price in cents and their item's name. Skip our items they have no real equivalent for. Never invent",
+    'prices that are not on their menu.',
+    '',
+    JSON.stringify({ ours: got.menu, theirs }),
+  ].join('\n');
+  const res = callClaude(ctx, prompt, MATCH_SCHEMA, 6000);
+  if (!res.ok) return `error: Claude failed: ${res.error}`;
+  const ours = new Set(got.menu.map(m => m.key));
+  const onTheirMenu = new Set(theirs.map(t => t.cents));
+  let n = 0;
+  ctx.withTx(tx => {
+    const rows = (res.data.matches ?? []).filter((m: any) => ours.has(m.ours) && onTheirMenu.has(Math.round(Number(m.cents))));
+    if (!rows.length) return;
+    for (const row of [...tx.db.rivalPrice.buildId.filter(buildId)]) if (row.rivalKey === rivalKey) tx.db.rivalPrice.id.delete(row.id);
+    for (const m of rows) {
+      tx.db.rivalPrice.insert({ id: 0n, buildId, rivalKey, itemKey: m.ours, priceCents: Math.round(Number(m.cents)), source: 'menu' });
+      n++;
+    }
+  });
+  console.info(`real menu for ${got.rival} (build ${buildId}) from ${sourceUrl}: ${n} of our items matched`);
+  return n ? `ok: ${n} of our items matched on ${got.rival}'s menu` : `error: none of our items matched ${got.rival}'s menu`;
 }
