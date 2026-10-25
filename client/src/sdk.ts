@@ -41,6 +41,12 @@ export interface Fork {
   builds(): BuildProgress[];
   menu(universeId: bigint): { key: string; name: string; category: string; priceCents: number }[];
   rivals(buildId: bigint): { key: string; name: string; x: number; y: number; distanceM: number; rating: number; priceIndex: number; weight: number }[];
+  /**
+   * What nearby coffee places charge for this café's items (estimated by Claude from chain prices,
+   * price level and city), by our item key. avgCents is the plain average over the places listed.
+   * Customers compare a rise against this. Loads lazily: empty on the first call, then onChange fires.
+   */
+  marketPrices(buildId: bigint): Map<string, { avgCents: number; places: { key: string; name: string; distanceM: number; cents: number }[] }>;
   experiments(rootUniverseId: bigint): { id: bigint; label: string; status: string; copies: number; days: number; radiusM: number; kind: 'single' | 'sweep' }[];
   results(experimentId: bigint): ExperimentSummary | null;
   /** Daily revenue per copy per option (for band charts). Needs watchExperiment(). */
@@ -98,6 +104,7 @@ export interface SweepResult {
   points: SweepPoint[]; // by price, current price included
   best: SweepPoint | null;
   bestRange: [number, number] | null; // the best price across 400 resamples of the futures (5%-95%), cents
+  marketCents: number; // what nearby places charge for this item on average (0 if unknown)
 }
 
 export interface CafeSummary {
@@ -317,6 +324,22 @@ function makeFork(conn: DbConnection, identity: string, httpHost: string, dbName
         .filter(m => m.universeId === universeId)
         .map(m => ({ key: m.key, name: m.name, category: m.category, priceCents: m.priceCents }));
     },
+    marketPrices(buildId) {
+      lazy(`rprice:${buildId}`, [`SELECT * FROM rival_price WHERE build_id = ${buildId}`]);
+      const rv = new Map([...conn.db.rival.iter()].filter(r => r.buildId === buildId).map(r => [r.key, r]));
+      const out = new Map<string, { avgCents: number; places: { key: string; name: string; distanceM: number; cents: number }[] }>();
+      for (const p of conn.db.rivalPrice.iter()) {
+        if (p.buildId !== buildId) continue;
+        const r = rv.get(p.rivalKey);
+        if (!out.has(p.itemKey)) out.set(p.itemKey, { avgCents: 0, places: [] });
+        out.get(p.itemKey)!.places.push({ key: p.rivalKey, name: r?.name ?? p.rivalKey, distanceM: r?.distanceM ?? 0, cents: p.priceCents });
+      }
+      for (const v of out.values()) {
+        v.places.sort((a, b) => a.distanceM - b.distanceM);
+        v.avgCents = Math.round(v.places.reduce((s, x) => s + x.cents, 0) / v.places.length);
+      }
+      return out;
+    },
     rivals(buildId) {
       return [...conn.db.rival.iter()]
         .filter(r => r.buildId === buildId)
@@ -526,6 +549,10 @@ function makeFork(conn: DbConnection, identity: string, httpHost: string, dbName
         points,
         best,
         bestRange,
+        marketCents: (() => {
+          const b = fork.cafes().find(c => c.universeId === e.baseUniverseId)?.buildId;
+          return b === undefined ? 0 : fork.marketPrices(b).get(itemKey)?.avgCents ?? 0;
+        })(),
       };
     },
     runExperiment(a) {
@@ -726,7 +753,7 @@ export class ForkMap {
       type: a.archetype,
       visitsPerWeek: a.visitsPerWeek,
       priceSensitivity: a.priceSensitivity,
-      priceCeilingPct: Math.round((0.15 + 0.6 * (1 - Math.min(1, Math.max(0, a.priceSensitivity)))) * 100),
+      priceCeilingPct: Math.round((0.15 + 0.25 * (1 - Math.min(1, Math.max(0, a.priceSensitivity)))) * 100),
       shareHere: a.pHere / (a.pHere + a.pCompetitor || 1),
       mood: a.satisfaction,
       usualOrder: (JSON.parse(a.usualOrder) as string[]).map(k => menu.get(k) ?? k),

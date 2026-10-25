@@ -497,8 +497,33 @@ export const mapJob = table(
   }
 );
 
+// What nearby coffee places charge for the closest equivalent of each of our items, so customers can
+// tell a rise that keeps us cheaper than the neighborhood from one that makes us pricier.
+export const rivalPrice = table(
+  { name: 'rival_price', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    buildId: t.u64().index('btree'),
+    rivalKey: t.string(),
+    itemKey: t.string(), // our menu key
+    priceCents: t.u32(),
+    source: t.string(), // "estimated" (Claude, from chain knowledge / price level / city) | "menu"
+  }
+);
+
+export const rivalPriceJob = table(
+  { name: 'rival_price_job' },
+  {
+    scheduledId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
+    buildId: t.u64(),
+  }
+);
+
 const spacetimedb = schema(
   {
+    rivalPrice,
+    rivalPriceJob,
     universe,
     cafe,
     menuItem,

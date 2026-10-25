@@ -41,6 +41,7 @@ import ClearCacheReducer from "./clear_cache_reducer";
 import FetchAreaMapReducer from "./fetch_area_map_reducer";
 import LoadTwinReducer from "./load_twin_reducer";
 import PauseUniverseReducer from "./pause_universe_reducer";
+import PriceRivalsReducer from "./price_rivals_reducer";
 import ReassembleBuildReducer from "./reassemble_build_reducer";
 import RefitCostsReducer from "./refit_costs_reducer";
 import RefreshRivalsReducer from "./refresh_rivals_reducer";
@@ -60,6 +61,7 @@ import SyncCardsReducer from "./sync_cards_reducer";
 // Import all procedure arg schemas
 import * as InspectMenuCrawlProcedure from "./inspect_menu_crawl_procedure";
 import * as InspectMenuSearchProcedure from "./inspect_menu_search_procedure";
+import * as TestMenuReadProcedure from "./test_menu_read_procedure";
 
 // Import all table schema definitions
 import AdminRow from "./admin_table";
@@ -83,6 +85,7 @@ import MenuSourceRow from "./menu_source_table";
 import PartnerRow from "./partner_table";
 import ReviewRow from "./review_table";
 import RivalRow from "./rival_table";
+import RivalPriceRow from "./rival_price_table";
 import RivalScanRow from "./rival_scan_table";
 import RivalTallyRow from "./rival_tally_table";
 import TracedRow from "./traced_table";
@@ -354,6 +357,20 @@ const tablesSchema = __schema({
       { name: 'rival_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, RivalRow),
+  rivalPrice: __table({
+    name: 'rival_price',
+    indexes: [
+      { accessor: 'buildId', name: 'rival_price_build_id_idx_btree', algorithm: 'btree', columns: [
+        'buildId',
+      ] },
+      { accessor: 'id', name: 'rival_price_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'rival_price_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, RivalPriceRow),
   rivalScan: __table({
     name: 'rival_scan',
     indexes: [
@@ -462,6 +479,7 @@ const reducersSchema = __reducers(
   __reducerSchema("fetch_area_map", FetchAreaMapReducer),
   __reducerSchema("load_twin", LoadTwinReducer),
   __reducerSchema("pause_universe", PauseUniverseReducer),
+  __reducerSchema("price_rivals", PriceRivalsReducer),
   __reducerSchema("reassemble_build", ReassembleBuildReducer),
   __reducerSchema("refit_costs", RefitCostsReducer),
   __reducerSchema("refresh_rivals", RefreshRivalsReducer),
@@ -483,6 +501,7 @@ const reducersSchema = __reducers(
 const proceduresSchema = __procedures(
   __procedureSchema("inspect_menu_crawl", InspectMenuCrawlProcedure.params, InspectMenuCrawlProcedure.returnType),
   __procedureSchema("inspect_menu_search", InspectMenuSearchProcedure.params, InspectMenuSearchProcedure.returnType),
+  __procedureSchema("test_menu_read", TestMenuReadProcedure.params, TestMenuReadProcedure.returnType),
 );
 
 /** The remote SpacetimeDB module schema, both runtime and type information. */

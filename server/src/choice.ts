@@ -28,12 +28,31 @@ const MOOD_RECOVERY = 0.97; // a bad experience fades by 3% a day away
 const SHIFT_HALF_LIFE = 21; // days for Claude's nudge to halve
 export const KNOWN_PLACES = 3;
 const MIN_SHARE = 0.002;
-// Each customer's ceiling: the largest rise on an item of their usual order they'll put up with,
-// from +15% (very price-sensitive) to +75% (doesn't think about price). Past it, every extra point
-// pushes them away hard, so demand can fall to zero and profit has a real peak. Rises of 15% or
-// less are never affected. CEIL_W = 0 switches it off.
+// Each customer's ceiling: the largest rise on an item of their usual order they'll put up with
+// (measured against the neighborhood too, see risePct), from +15% (very price-sensitive) to +40%
+// (doesn't think about price); a typical customer (sensitivity ~0.3) is at about +32%. Past it, every
+// extra point pushes them away hard, so demand can fall to zero and profit has a real peak. Rises of
+// 15% or less are never affected. CEIL_W = 0 switches it off.
 const CEIL_W = 6;
-export const ceilingFor = (priceSensitivity: number) => 0.15 + 0.6 * (1 - clamp(priceSensitivity, 0, 1));
+export const ceilingFor = (priceSensitivity: number) => 0.15 + 0.25 * (1 - clamp(priceSensitivity, 0, 1));
+
+// The neighborhood: a rise that keeps us at or below what nearby places charge mostly isn't felt as
+// a hike (we're still the cheaper option), only BELOW_MARKET_W of it counts, for the edge it takes off
+// "cheaper than elsewhere". Past the market price it counts in full, measured from the market price.
+const BELOW_MARKET_W = 0.25;
+
+/**
+ * How big a rise from `ref` to `seen` feels (a fraction, like (seen - ref) / ref), given what nearby
+ * places charge (`market`, 0 = unknown). With no market or a market at or below ref, it is exactly
+ * (seen - ref) / ref, so cafés without neighbor prices behave as before.
+ */
+export function risePct(seen: number, ref: number, market = 0): number {
+  if (ref <= 0) return 0;
+  if (seen <= ref || market <= ref) return (seen - ref) / ref;
+  const belowMarket = (Math.min(seen, market) - ref) / ref;
+  const aboveMarket = Math.max(0, seen - market) / market;
+  return BELOW_MARKET_W * belowMarket + aboveMarket;
+}
 
 const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
 
@@ -118,6 +137,7 @@ export interface DayIn {
   seenPriceCents: number; // the price they believe it is now (what they saw last time)
   ease: number; // rivals.ts switchingEase: how easy leaving is given the rivals in range
   overCeiling?: number; // how far the largest item rise they've seen is past their ceiling (0 = within it)
+  marketCents?: number; // what their usual order costs at the places they know (0/undefined = unknown)
   places: Place[]; // the places they know that are in range (weights)
   state: ChoiceState;
 }
@@ -203,7 +223,8 @@ const sensitivity = (c: Calibrated) => (1 / NEST) * (1 - c.hereInNest) + c.hereI
  */
 function priceEffect(c: Calibrated, d: DayIn, seen: number, ref: number): number {
   if (ref <= 0 || seen === ref) return 0;
-  const pct = (seen - ref) / ref;
+  const pct = risePct(seen, ref, d.marketCents ?? 0);
+  if (pct === 0) return 0;
   if (pct > 0) return -dropFor(c, 1 - clamp(pct * d.priceSensitivity * RULE * d.ease, 0, RULE_MAX));
   return (-pct * d.priceSensitivity * CUT_RULE * d.ease) / sensitivity(c);
 }

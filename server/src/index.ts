@@ -2,7 +2,8 @@
 // the AI brain's caching and prompt in brain.ts.
 import { t, SenderError } from 'spacetimedb/server';
 import { ScheduleAt } from 'spacetimedb';
-import spacetimedb, { buildJob, clockJob, decisionJob, mapJob, profileJob, rivalJob } from './schema';
+import spacetimedb, { buildJob, clockJob, decisionJob, mapJob, profileJob, rivalJob, rivalPriceJob } from './schema';
+import { priceRivals } from './rivalprices';
 import { fetchAreaMap } from './areamap';
 import { syncCard } from './cards';
 import { usesClaude } from './today';
@@ -495,6 +496,22 @@ export const inspect_menu_search = spacetimedb.procedure({ buildId: t.u64() }, t
 );
 
 /** Scrape every coffee place within 7 miles of a built café (for the radius slider). */
+/** Estimate what nearby places charge for this café's items (runs automatically after builds and rival scans). */
+export const price_rivals = spacetimedb.reducer({ buildId: t.u64() }, (ctx, { buildId }) => {
+  requireAdmin(ctx);
+  ctx.db.rivalPriceJob.insert({ scheduledId: 0n, scheduledAt: ScheduleAt.time(ctx.timestamp.microsSinceUnixEpoch), buildId });
+});
+
+export const price_rivals_run = spacetimedb.procedure(
+  { onSchedule: rivalPriceJob },
+  { job: rivalPriceJob.rowType },
+  t.unit(),
+  (ctx, { job }) => {
+    console.info(`rival prices for build ${job.buildId}: ${priceRivals(ctx, job.buildId)}`);
+    return {};
+  }
+);
+
 export const refresh_rivals = spacetimedb.reducer({ buildId: t.u64() }, (ctx, { buildId }) => {
   requireAdmin(ctx);
   const b = ctx.db.twinBuild.id.find(buildId);

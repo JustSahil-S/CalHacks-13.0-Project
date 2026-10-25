@@ -347,6 +347,8 @@ export function advanceBuild(ctx: ProcCtx, buildId: bigint) {
           universeId,
           detail: `Twin ready: universe ${universeId}, ${twin.customers.length} customers from ${profiles.length} real reviewers`,
         });
+        // What the neighbors charge for our items (re-done on every rebuild: the menu may have changed).
+        tx.db.rivalPriceJob.insert({ scheduledId: 0n, scheduledAt: ScheduleAt.time(tx.timestamp.microsSinceUnixEpoch), buildId });
         // Fetch the real neighborhood for the viewer (skipped if it already exists).
         if (!tx.db.areaMap.buildId.find(buildId)) {
           tx.db.mapJob.insert({ scheduledId: 0n, scheduledAt: ScheduleAt.time(tx.timestamp.microsSinceUnixEpoch), buildId });
@@ -448,6 +450,9 @@ export function advanceRivalScan(ctx: ProcCtx, buildId: bigint) {
       }
       const cur = tx.db.twinBuild.id.find(buildId);
       if (cur) tx.db.twinBuild.id.update({ ...cur, competitorsJson: JSON.stringify(places) });
+      if (cur && cur.universeId !== 0n) {
+        tx.db.rivalPriceJob.insert({ scheduledId: 0n, scheduledAt: ScheduleAt.time(tx.timestamp.microsSinceUnixEpoch), buildId });
+      }
     });
     set({ status: 'done', detail: `${rivals.length} coffee places within 7 miles` });
   } catch (e) {

@@ -12,7 +12,7 @@ for (const f of ['choice.ts', 'rng.ts']) {
   const code = await readFile(new URL(`../server/src/${f}`, import.meta.url), 'utf8');
   await writeFile(join(dir, f), code.replace("from './rng';", "from './rng.ts';"));
 }
-const { afterDay, baselineOdds, ceilingFor, choose, dayOdds, initialState, knownPlaces, withClaude } = await import(pathToFileURL(join(dir, 'choice.ts')).href);
+const { afterDay, baselineOdds, ceilingFor, choose, dayOdds, initialState, knownPlaces, risePct, withClaude } = await import(pathToFileURL(join(dir, 'choice.ts')).href);
 
 let failed = 0;
 const check = (name, fn) => {
@@ -218,7 +218,38 @@ check("long run (used to the new price): revenue peaks at a finite price, then c
 check('price-hawks have a lower ceiling than the unbothered', () => {
   assert.ok(ceilingFor(0.95) < ceilingFor(0.2));
   assert.equal(+ceilingFor(1).toFixed(3), 0.15);
-  assert.equal(+ceilingFor(0).toFixed(3), 0.75);
+  assert.equal(+ceilingFor(0).toFixed(3), 0.4);
+});
+
+console.log('neighborhood prices');
+check('rise measure: unchanged without a (higher) market price', () => {
+  assert.equal(risePct(400, 300), 1 / 3);
+  assert.equal(risePct(400, 300, 0), 1 / 3);
+  assert.equal(risePct(400, 300, 250), 1 / 3); // we were already pricier: the full rise counts
+  assert.equal(risePct(250, 300, 500), -1 / 6); // cuts are unchanged
+});
+check('rise measure: below the market only a quarter counts; above it counts from the market price', () => {
+  assert.ok(Math.abs(risePct(400, 300, 500) - 0.25 / 3) < 1e-12); // $3 -> $4 next to $5: feels like +8%
+  assert.ok(Math.abs(risePct(600, 300, 500) - (0.25 * 2 / 3 + 1 / 5)) < 1e-12);
+});
+check("the user's example: $3 -> $4 when neighbors charge $5 barely moves anyone", () => {
+  for (const p of people) {
+    const st = initialState(baselineOdds(p.v, p.loyalty), 300, 9);
+    const base = dayOdds(dayIn(p, { seenPriceCents: 300, state: st })).pHere;
+    const alone = dayOdds(dayIn(p, { seenPriceCents: 400, state: st })).pHere;
+    const nextToPricier = dayOdds(dayIn(p, { seenPriceCents: 400, state: st, marketCents: 500 })).pHere;
+    assert.ok(nextToPricier > alone, `${p.name}: market should soften the rise`);
+    assert.ok(base - nextToPricier < (base - alone) / 3, `${p.name}: loss ${(base - nextToPricier).toFixed(4)} vs ${(base - alone).toFixed(4)}`);
+  }
+});
+check('no price change: a market price changes nothing', () => {
+  for (const p of people) {
+    const a = dayOdds(dayIn(p)).pHere;
+    const b = dayOdds(dayIn(p, { marketCents: 900 })).pHere;
+    const c = dayOdds(dayIn(p, { marketCents: 200 })).pHere;
+    assert.equal(a, b);
+    assert.equal(a, c);
+  }
 });
 
 console.log('numerics');

@@ -38,6 +38,34 @@ export const Agent = __t.object("Agent", {
 });
 export type Agent = __Infer<typeof Agent>;
 
+export const AgentChoice = __t.object("AgentChoice", {
+  agentId: __t.u64(),
+  universeId: __t.u64(),
+  habitHere: __t.f64(),
+  habitOut: __t.f64(),
+  habitTick: __t.u32(),
+  anchorCents: __t.f64(),
+  shift: __t.f64(),
+  shiftTick: __t.u32(),
+  lastHereTick: __t.u32(),
+  knownJson: __t.string(),
+});
+export type AgentChoice = __Infer<typeof AgentChoice>;
+
+export const AgentDay = __t.object("AgentDay", {
+  agentId: __t.u64(),
+  universeId: __t.u64(),
+  habitHere: __t.f64(),
+  habitOut: __t.f64(),
+  habitTick: __t.u32(),
+  baseCents: __t.f64(),
+  anchorCents: __t.f64(),
+  shift: __t.f64(),
+  shiftTick: __t.u32(),
+  lastHereTick: __t.u32(),
+});
+export type AgentDay = __Infer<typeof AgentDay>;
+
 export const AreaMap = __t.object("AreaMap", {
   buildId: __t.u64(),
   status: __t.string(),
@@ -90,6 +118,12 @@ export const Cafe = __t.object("Cafe", {
   cashCents: __t.i64(),
 });
 export type Cafe = __Infer<typeof Cafe>;
+
+export const ChoiceStart = __t.object("ChoiceStart", {
+  universeId: __t.u64(),
+  startTick: __t.u32(),
+});
+export type ChoiceStart = __Infer<typeof ChoiceStart>;
 
 export const ClockJob = __t.object("ClockJob", {
   scheduledId: __t.u64(),
@@ -223,6 +257,13 @@ export const Memory = __t.object("Memory", {
 });
 export type Memory = __Infer<typeof Memory>;
 
+export const MenuCandidate = __t.object("MenuCandidate", {
+  buildId: __t.u64(),
+  remainingJson: __t.string(),
+  triedJson: __t.string(),
+});
+export type MenuCandidate = __Infer<typeof MenuCandidate>;
+
 export const MenuItem = __t.object("MenuItem", {
   id: __t.u64(),
   universeId: __t.u64(),
@@ -289,6 +330,23 @@ export const RivalJob = __t.object("RivalJob", {
   buildId: __t.u64(),
 });
 export type RivalJob = __Infer<typeof RivalJob>;
+
+export const RivalPrice = __t.object("RivalPrice", {
+  id: __t.u64(),
+  buildId: __t.u64(),
+  rivalKey: __t.string(),
+  itemKey: __t.string(),
+  priceCents: __t.u32(),
+  source: __t.string(),
+});
+export type RivalPrice = __Infer<typeof RivalPrice>;
+
+export const RivalPriceJob = __t.object("RivalPriceJob", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+  buildId: __t.u64(),
+});
+export type RivalPriceJob = __Infer<typeof RivalPriceJob>;
 
 export const RivalScan = __t.object("RivalScan", {
   buildId: __t.u64(),
