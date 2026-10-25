@@ -195,6 +195,8 @@ export class TileScene {
     this.showPainted();
     // The map rarely goes idle while people walk, so look for buildings after moves and tile loads.
     this.map.on('moveend', () => this.schedulePaint());
+    // Buildings can only be found once drawn: try again whenever the map settles with all tiles drawn.
+    this.map.on('idle', () => this.schedulePaint());
     this.map.on('sourcedata', e => {
       if (e.sourceId === 'osm' && (e as { tile?: unknown }).tile) this.schedulePaint();
     });
@@ -327,14 +329,23 @@ export class TileScene {
     const now = performance.now();
     if (now - this.lastDeclutter < 120) return;
     this.lastDeclutter = now;
-    const markers = [...(this.cafeMarker ? [this.cafeMarker] : []), ...this.rivalMarkers];
     const placed: DOMRect[] = [];
-    for (const m of markers) {
+    const hits = (r: DOMRect) => placed.some(p => r.left < p.right + 4 && r.right > p.left - 4 && r.top < p.bottom + 2 && r.bottom > p.top - 2);
+    if (this.cafeMarker) {
+      this.cafeMarker.getElement().style.visibility = 'visible';
+      placed.push(this.cafeMarker.getElement().getBoundingClientRect());
+    }
+    for (const m of this.rivalMarkers) {
       const el = m.getElement();
       el.style.visibility = 'visible';
-      const r = el.getBoundingClientRect();
-      const hit = placed.some(p => r.left < p.right + 4 && r.right > p.left - 4 && r.top < p.bottom + 2 && r.bottom > p.top - 2);
-      if (hit) el.style.visibility = 'hidden';
+      // Above the pin first; if that collides (a rival next door to the café), try just below it.
+      m.setOffset([0, -24]);
+      let r = el.getBoundingClientRect();
+      if (hits(r)) {
+        m.setOffset([0, r.height + 10]);
+        r = el.getBoundingClientRect();
+      }
+      if (hits(r)) el.style.visibility = 'hidden';
       else placed.push(r);
     }
   }

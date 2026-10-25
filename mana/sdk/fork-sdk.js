@@ -42890,7 +42890,7 @@ var Jc = {
 				"fill-extrusion-opacity": 1,
 				"fill-extrusion-vertical-gradient": !0
 			}
-		}), this.showPainted(), this.map.on("moveend", () => this.schedulePaint()), this.map.on("sourcedata", (e) => {
+		}), this.showPainted(), this.map.on("moveend", () => this.schedulePaint()), this.map.on("idle", () => this.schedulePaint()), this.map.on("sourcedata", (e) => {
 			e.sourceId === "osm" && e.tile && this.schedulePaint();
 		}), this.map.addLayer({
 			id: "mask",
@@ -43024,12 +43024,13 @@ var Jc = {
 		let e = performance.now();
 		if (e - this.lastDeclutter < 120) return;
 		this.lastDeclutter = e;
-		let t = [...this.cafeMarker ? [this.cafeMarker] : [], ...this.rivalMarkers], n = [];
-		for (let e of t) {
-			let t = e.getElement();
-			t.style.visibility = "visible";
-			let r = t.getBoundingClientRect();
-			n.some((e) => r.left < e.right + 4 && r.right > e.left - 4 && r.top < e.bottom + 2 && r.bottom > e.top - 2) ? t.style.visibility = "hidden" : n.push(r);
+		let t = [], n = (e) => t.some((t) => e.left < t.right + 4 && e.right > t.left - 4 && e.top < t.bottom + 2 && e.bottom > t.top - 2);
+		this.cafeMarker && (this.cafeMarker.getElement().style.visibility = "visible", t.push(this.cafeMarker.getElement().getBoundingClientRect()));
+		for (let e of this.rivalMarkers) {
+			let r = e.getElement();
+			r.style.visibility = "visible", e.setOffset([0, -24]);
+			let i = r.getBoundingClientRect();
+			n(i) && (e.setOffset([0, i.height + 10]), i = r.getBoundingClientRect()), n(i) ? r.style.visibility = "hidden" : t.push(i);
 		}
 	}
 	lastDeclutter = 0;
